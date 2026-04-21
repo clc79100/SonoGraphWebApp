@@ -1,6 +1,7 @@
-import { FAMILIES, type FamilyId } from "@/data/genres";
+import { useMemo, useState } from "react";
+import { FAMILIES, GENRES, type FamilyId, type Genre } from "@/data/genres";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -9,6 +10,20 @@ interface Props {
   activeFamilies: Set<FamilyId>;
   toggleFamily: (id: FamilyId) => void;
   clearFamilies: () => void;
+  onSelectGenre: (id: string) => void;
+}
+
+// "Main" subgenres = top-level genres of the family (parent is undefined or
+// outside the family) plus first-level children, capped per family.
+function mainSubgenres(family: FamilyId, limit = 14): Genre[] {
+  const inFamily = GENRES.filter((g) => g.family === family);
+  // childCount as proxy for importance
+  const scored = inFamily.map((g) => ({
+    g,
+    score: GENRES.filter((x) => x.parents?.includes(g.id)).length,
+  }));
+  scored.sort((a, b) => b.score - a.score || a.g.name.localeCompare(b.g.name));
+  return scored.slice(0, limit).map((s) => s.g);
 }
 
 export function GraphControls({
@@ -17,7 +32,25 @@ export function GraphControls({
   activeFamilies,
   toggleFamily,
   clearFamilies,
+  onSelectGenre,
 }: Props) {
+  const [expanded, setExpanded] = useState<Set<FamilyId>>(new Set());
+
+  const subgenresByFamily = useMemo(() => {
+    const map = new Map<FamilyId, Genre[]>();
+    FAMILIES.forEach((f) => map.set(f.id, mainSubgenres(f.id)));
+    return map;
+  }, []);
+
+  const toggleExpand = (id: FamilyId) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="pointer-events-none fixed left-0 top-0 z-20 flex h-screen w-full flex-col p-4 md:w-[320px]">
       <div className="pointer-events-auto rounded-xl border border-border bg-card/80 backdrop-blur-xl p-3 shadow-xl">
@@ -49,33 +82,71 @@ export function GraphControls({
               onClick={clearFamilies}
               className="text-[10px] font-mono text-muted-foreground hover:text-foreground"
             >
-              limpiar
+              limpiar ({activeFamilies.size})
             </button>
           )}
         </div>
         <ul className="grid grid-cols-1 gap-0.5">
           {FAMILIES.map((f) => {
-            const active = activeFamilies.size === 0 || activeFamilies.has(f.id);
+            const isActive = activeFamilies.has(f.id);
+            const isOpen = expanded.has(f.id);
+            const dim = activeFamilies.size > 0 && !isActive;
+            const subs = subgenresByFamily.get(f.id) || [];
             return (
-              <li key={f.id}>
-                <button
-                  onClick={() => toggleFamily(f.id)}
+              <li key={f.id} className="rounded-md">
+                <div
                   className={cn(
-                    "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                    active ? "text-foreground hover:bg-secondary" : "text-muted-foreground/50 hover:bg-secondary/50"
+                    "group flex w-full items-center gap-1 rounded-md text-left text-xs transition-colors",
+                    dim ? "opacity-50" : "opacity-100"
                   )}
                 >
-                  <span
-                    aria-hidden
-                    className="h-2.5 w-2.5 rounded-full transition-all"
-                    style={{
-                      backgroundColor: f.color,
-                      boxShadow: active ? `0 0 8px ${f.color}` : "none",
-                      opacity: active ? 1 : 0.4,
-                    }}
-                  />
-                  <span className="flex-1">{f.name}</span>
-                </button>
+                  <button
+                    onClick={() => toggleExpand(f.id)}
+                    aria-label={isOpen ? "Colapsar" : "Expandir"}
+                    className="flex h-7 w-6 shrink-0 items-center justify-center rounded hover:bg-secondary"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 text-muted-foreground transition-transform",
+                        isOpen && "rotate-90"
+                      )}
+                    />
+                  </button>
+                  <button
+                    onClick={() => toggleFamily(f.id)}
+                    className={cn(
+                      "flex flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-secondary",
+                      isActive && "bg-secondary"
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 rounded-full transition-all"
+                      style={{
+                        backgroundColor: f.color,
+                        boxShadow: isActive ? `0 0 10px ${f.color}` : "none",
+                      }}
+                    />
+                    <span className="flex-1 text-foreground">{f.name}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {GENRES.filter((g) => g.family === f.id).length}
+                    </span>
+                  </button>
+                </div>
+                {isOpen && subs.length > 0 && (
+                  <ul className="ml-7 mt-0.5 mb-1.5 flex flex-wrap gap-1 border-l border-border/60 pl-2 py-1">
+                    {subs.map((g) => (
+                      <li key={g.id}>
+                        <button
+                          onClick={() => onSelectGenre(g.id)}
+                          className="rounded-full border border-border/60 bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-secondary transition-colors"
+                        >
+                          {g.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             );
           })}
