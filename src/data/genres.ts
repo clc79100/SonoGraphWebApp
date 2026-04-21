@@ -591,6 +591,7 @@ export const GENRES: Genre[] = [
   { id: "progressive-electro-house", name: "Progressive Electro House", family: "electronic", parents: ["electro-house", "progressive-house"] },
 
   // Jazz / lounge
+  { id: "easy-listening", name: "Easy Listening", family: "jazz", parents: ["jazz", "pop"] },
   { id: "vocal-jazz", name: "Vocal Jazz", family: "jazz", parents: ["jazz"] },
   { id: "lounge", name: "Lounge", family: "jazz", parents: ["easy-listening"] },
 
