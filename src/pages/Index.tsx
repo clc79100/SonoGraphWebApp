@@ -66,6 +66,7 @@ const Index = () => {
         activeFamilies={activeFamilies}
         toggleFamily={toggleFamily}
         clearFamilies={() => setActiveFamilies(new Set())}
+        onSelectGenre={setSelectedId}
       />
 
       <GenreDetail

@@ -124,38 +124,51 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
         const isMatch = matchSet.has(n.id);
         const isSelected = selectedId === n.id;
         const isNeighbor = neighborhood.has(n.id);
-        const dim = !isMatch || (selectedId && !isNeighbor);
+        const dim = !isMatch || (selectedId && !isNeighbor && !isSelected);
+
+        // Resolve actual color (CSS var → rgba) once per draw
+        const baseColor = (() => {
+          if (typeof document === "undefined") return n.color;
+          // n.color may be like 'hsl(var(--family-rock))'
+          const m = n.color.match(/var\((--[\w-]+)\)/);
+          if (!m) return n.color;
+          const val = getComputedStyle(document.documentElement)
+            .getPropertyValue(m[1])
+            .trim();
+          return val ? `hsl(${val})` : n.color;
+        })();
+        const dimColor = baseColor.startsWith("hsl(")
+          ? baseColor.replace("hsl(", "hsla(").replace(")", ", 0.15)")
+          : baseColor;
 
         const r = n.val;
-        // glow for selected
         if (isSelected) {
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 6, 0, 2 * Math.PI);
-          ctx.fillStyle = "hsla(265, 85%, 70%, 0.18)";
+          ctx.fillStyle = "hsla(265, 85%, 70%, 0.22)";
           ctx.fill();
         }
         ctx.beginPath();
         ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = dim ? n.color.replace(")", " / 0.18)").replace("hsl(", "hsla(") : n.color;
+        ctx.fillStyle = dim ? dimColor : baseColor;
         ctx.fill();
-        if (isSelected || isNeighbor) {
-          ctx.lineWidth = 1 / globalScale;
-          ctx.strokeStyle = "hsla(0,0%,100%,0.7)";
+        if (isSelected || isNeighbor || (isMatch && (selectedId || matchSet.size < 50))) {
+          ctx.lineWidth = (isSelected ? 1.6 : 0.8) / globalScale;
+          ctx.strokeStyle = isSelected ? "hsla(0,0%,100%,0.9)" : "hsla(0,0%,100%,0.5)";
           ctx.stroke();
         }
 
-        // label
         const label = n.name;
         const fontSize = Math.max(10 / globalScale, 2.2);
         ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         ctx.fillStyle = dim
-          ? "hsla(210, 20%, 92%, 0.25)"
+          ? "hsla(210, 20%, 92%, 0.18)"
           : isSelected
           ? "hsl(210, 20%, 98%)"
-          : "hsla(210, 20%, 92%, 0.85)";
-        if (globalScale > 1.2 || isSelected || isNeighbor) {
+          : "hsla(210, 20%, 92%, 0.9)";
+        if (globalScale > 1.2 || isSelected || isNeighbor || (isMatch && matchSet.size < 30)) {
           ctx.fillText(label, n.x, n.y + r + 1);
         }
       }}
