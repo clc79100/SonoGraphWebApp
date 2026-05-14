@@ -23,6 +23,7 @@ interface Props {
   onSelect: (id: string | null) => void;
   search: string;
   activeFamilies: Set<FamilyId>;
+  highlightedIds?: Set<string>;
 }
 
 function buildGraph() {
