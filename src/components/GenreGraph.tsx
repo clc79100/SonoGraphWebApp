@@ -50,7 +50,7 @@ function buildGraph() {
   return { nodes, links };
 }
 
-export function GenreGraph({ width, height, selectedId, onSelect, search, activeFamilies }: Props) {
+export function GenreGraph({ width, height, selectedId, onSelect, search, activeFamilies, highlightedIds }: Props) {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const data = useMemo(buildGraph, []);
 
