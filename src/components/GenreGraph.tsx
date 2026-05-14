@@ -54,7 +54,7 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const data = useMemo(buildGraph, []);
 
-  // Highlight set for search and family filter
+  // Highlight set for search and family filter (and artist highlights)
   const matchSet = useMemo(() => {
     const s = search.trim().toLowerCase();
     const set = new Set<string>();
@@ -63,8 +63,11 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
       const inSearch = !s || n.name.toLowerCase().includes(s) || n.id.includes(s);
       if (inFamily && inSearch) set.add(n.id);
     }
+    if (highlightedIds && highlightedIds.size > 0) {
+      for (const id of highlightedIds) set.add(id);
+    }
     return set;
-  }, [data.nodes, search, activeFamilies]);
+  }, [data.nodes, search, activeFamilies, highlightedIds]);
 
   // Neighborhood of selected
   const neighborhood = useMemo(() => {
