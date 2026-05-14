@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { GENRES, FAMILY_COLOR, type Genre } from "@/data/genres";
-import { searchArtistsByTag, type MBArtist } from "@/lib/musicbrainz";
+import {
+  searchArtistsByTag,
+  searchRecordingsByTag,
+  fetchArtistImage,
+  type MBArtist,
+  type MBRecording,
+} from "@/lib/musicbrainz";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ExternalLink, X } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ExternalLink, X, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -15,19 +22,39 @@ interface Props {
 export function GenreDetail({ genreId, onClose, onSelect }: Props) {
   const genre = genreId ? GENRES.find((g) => g.id === genreId) || null : null;
   const [artists, setArtists] = useState<MBArtist[]>([]);
+  const [tracks, setTracks] = useState<MBRecording[]>([]);
+  const [images, setImages] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
+  const [loadingTracks, setLoadingTracks] = useState(false);
 
   useEffect(() => {
     if (!genre) {
       setArtists([]);
+      setTracks([]);
+      setImages({});
       return;
     }
     setLoading(true);
+    setLoadingTracks(true);
     setArtists([]);
+    setTracks([]);
+    setImages({});
     const tag = genre.name.toLowerCase();
+
     searchArtistsByTag(tag, 10)
-      .then(setArtists)
+      .then(async (list) => {
+        setArtists(list);
+        // Cargar imágenes en paralelo (Wikipedia)
+        const entries = await Promise.all(
+          list.map(async (a) => [a.id, await fetchArtistImage(a.name)] as const),
+        );
+        setImages(Object.fromEntries(entries));
+      })
       .finally(() => setLoading(false));
+
+    searchRecordingsByTag(tag, 12)
+      .then(setTracks)
+      .finally(() => setLoadingTracks(false));
   }, [genre?.id]);
 
   if (!genre) return null;
@@ -91,29 +118,83 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
             {!loading && artists.length === 0 && (
               <p className="text-xs text-muted-foreground">Sin resultados.</p>
             )}
-            <ul className="space-y-1.5">
-              {artists.map((a) => (
-                <li key={a.id} className="text-sm">
+            <ul className="space-y-2">
+              {artists.map((a) => {
+                const img = images[a.id];
+                return (
+                  <li key={a.id}>
+                    <a
+                      href={`https://musicbrainz.org/artist/${a.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group flex items-center gap-2.5 rounded-md p-1.5 -mx-1.5 hover:bg-secondary/60 transition-colors"
+                    >
+                      <Avatar className="h-9 w-9 border border-border">
+                        {img && <AvatarImage src={img} alt={a.name} />}
+                        <AvatarFallback className="text-[10px] bg-secondary">
+                          {a.name.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm text-foreground group-hover:text-primary transition-colors">
+                            {a.name}
+                          </span>
+                          {a.country && (
+                            <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                              {a.country}
+                            </span>
+                          )}
+                        </div>
+                        {a.disambiguation && (
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {a.disambiguation}
+                          </p>
+                        )}
+                      </div>
+                      <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </Section>
+
+          <Section title="Top canciones">
+            {loadingTracks && <p className="text-xs text-muted-foreground">Cargando…</p>}
+            {!loadingTracks && tracks.length === 0 && (
+              <p className="text-xs text-muted-foreground">Sin resultados.</p>
+            )}
+            <ol className="space-y-1">
+              {tracks.map((t, i) => (
+                <li key={t.id}>
                   <a
-                    href={`https://musicbrainz.org/artist/${a.id}`}
+                    href={`https://musicbrainz.org/recording/${t.id}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-1.5 text-foreground hover:text-primary transition-colors"
+                    className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors"
                   >
-                    <span>{a.name}</span>
-                    {a.country && (
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {a.country}
+                    <span className="w-5 text-right font-mono text-[10px] text-muted-foreground shrink-0">
+                      {i + 1}
+                    </span>
+                    <Music2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-foreground group-hover:text-primary transition-colors">
+                        {t.title}
+                      </p>
+                      {t.artist && (
+                        <p className="truncate text-[11px] text-muted-foreground">{t.artist}</p>
+                      )}
+                    </div>
+                    {t.length && (
+                      <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                        {formatDuration(t.length)}
                       </span>
                     )}
-                    <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-70 transition-opacity" />
                   </a>
-                  {a.disambiguation && (
-                    <p className="text-[11px] text-muted-foreground">{a.disambiguation}</p>
-                  )}
                 </li>
               ))}
-            </ul>
+            </ol>
           </Section>
 
           <div className="pt-2 border-t border-border space-y-1.5">
@@ -138,6 +219,13 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
       </ScrollArea>
     </aside>
   );
+}
+
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
