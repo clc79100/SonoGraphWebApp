@@ -22,19 +22,39 @@ interface Props {
 export function GenreDetail({ genreId, onClose, onSelect }: Props) {
   const genre = genreId ? GENRES.find((g) => g.id === genreId) || null : null;
   const [artists, setArtists] = useState<MBArtist[]>([]);
+  const [tracks, setTracks] = useState<MBRecording[]>([]);
+  const [images, setImages] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
+  const [loadingTracks, setLoadingTracks] = useState(false);
 
   useEffect(() => {
     if (!genre) {
       setArtists([]);
+      setTracks([]);
+      setImages({});
       return;
     }
     setLoading(true);
+    setLoadingTracks(true);
     setArtists([]);
+    setTracks([]);
+    setImages({});
     const tag = genre.name.toLowerCase();
+
     searchArtistsByTag(tag, 10)
-      .then(setArtists)
+      .then(async (list) => {
+        setArtists(list);
+        // Cargar imágenes en paralelo (Wikipedia)
+        const entries = await Promise.all(
+          list.map(async (a) => [a.id, await fetchArtistImage(a.name)] as const),
+        );
+        setImages(Object.fromEntries(entries));
+      })
       .finally(() => setLoading(false));
+
+    searchRecordingsByTag(tag, 12)
+      .then(setTracks)
+      .finally(() => setLoadingTracks(false));
   }, [genre?.id]);
 
   if (!genre) return null;
