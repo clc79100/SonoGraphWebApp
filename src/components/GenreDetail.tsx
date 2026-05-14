@@ -221,6 +221,13 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
   );
 }
 
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
