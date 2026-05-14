@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { GENRES, FAMILY_COLOR, type Genre } from "@/data/genres";
-import { searchArtistsByTag, type MBArtist } from "@/lib/musicbrainz";
+import {
+  searchArtistsByTag,
+  searchRecordingsByTag,
+  fetchArtistImage,
+  type MBArtist,
+  type MBRecording,
+} from "@/lib/musicbrainz";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ExternalLink, X } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ExternalLink, X, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
