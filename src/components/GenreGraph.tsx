@@ -23,6 +23,7 @@ interface Props {
   onSelect: (id: string | null) => void;
   search: string;
   activeFamilies: Set<FamilyId>;
+  highlightedIds?: Set<string>;
 }
 
 function buildGraph() {
@@ -49,11 +50,11 @@ function buildGraph() {
   return { nodes, links };
 }
 
-export function GenreGraph({ width, height, selectedId, onSelect, search, activeFamilies }: Props) {
+export function GenreGraph({ width, height, selectedId, onSelect, search, activeFamilies, highlightedIds }: Props) {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const data = useMemo(buildGraph, []);
 
-  // Highlight set for search and family filter
+  // Highlight set for search and family filter (and artist highlights)
   const matchSet = useMemo(() => {
     const s = search.trim().toLowerCase();
     const set = new Set<string>();
@@ -62,8 +63,11 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
       const inSearch = !s || n.name.toLowerCase().includes(s) || n.id.includes(s);
       if (inFamily && inSearch) set.add(n.id);
     }
+    if (highlightedIds && highlightedIds.size > 0) {
+      for (const id of highlightedIds) set.add(id);
+    }
     return set;
-  }, [data.nodes, search, activeFamilies]);
+  }, [data.nodes, search, activeFamilies, highlightedIds]);
 
   // Neighborhood of selected
   const neighborhood = useMemo(() => {
@@ -124,12 +128,12 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
         const isMatch = matchSet.has(n.id);
         const isSelected = selectedId === n.id;
         const isNeighbor = neighborhood.has(n.id);
-        const dim = !isMatch || (selectedId && !isNeighbor && !isSelected);
+        const isHighlighted = !!highlightedIds && highlightedIds.has(n.id);
+        const dim = !isMatch || (selectedId && !isNeighbor && !isSelected && !isHighlighted);
 
         // Resolve actual color (CSS var → rgba) once per draw
         const baseColor = (() => {
           if (typeof document === "undefined") return n.color;
-          // n.color may be like 'hsl(var(--family-rock))'
           const m = n.color.match(/var\((--[\w-]+)\)/);
           if (!m) return n.color;
           const val = getComputedStyle(document.documentElement)
@@ -142,6 +146,12 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
           : baseColor;
 
         const r = n.val;
+        if (isHighlighted) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r + 7, 0, 2 * Math.PI);
+          ctx.fillStyle = "hsla(195, 90%, 60%, 0.28)";
+          ctx.fill();
+        }
         if (isSelected) {
           ctx.beginPath();
           ctx.arc(n.x, n.y, r + 6, 0, 2 * Math.PI);
@@ -152,6 +162,11 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
         ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
         ctx.fillStyle = dim ? dimColor : baseColor;
         ctx.fill();
+        if (isHighlighted) {
+          ctx.lineWidth = 1.6 / globalScale;
+          ctx.strokeStyle = "hsla(195, 95%, 75%, 0.95)";
+          ctx.stroke();
+        }
         if (isSelected || isNeighbor || (isMatch && (selectedId || matchSet.size < 50))) {
           ctx.lineWidth = (isSelected ? 1.6 : 0.8) / globalScale;
           ctx.strokeStyle = isSelected ? "hsla(0,0%,100%,0.9)" : "hsla(0,0%,100%,0.5)";
