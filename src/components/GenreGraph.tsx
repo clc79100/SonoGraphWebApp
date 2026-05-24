@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback } from "react";
 import ForceGraph2D, { ForceGraphMethods } from "react-force-graph-2d";
-import { GENRES, FAMILY_COLOR, type Genre, type FamilyId } from "@/data/genres";
+import { GENRES, getFamilyColor, type Genre, type FamilyId } from "@/data/genres";
 
 export interface GraphNode {
   id: string;
@@ -35,7 +35,7 @@ function buildGraph() {
       name: g.name,
       family: g.family,
       val: 2 + Math.sqrt(childCount + 1) * 2,
-      color: FAMILY_COLOR[g.family],
+      color: getFamilyColor(g.family),
       genre: g,
     };
   });

@@ -1,25 +1,21 @@
 import { useEffect, useState } from "react";
-import { GENRES, FAMILY_COLOR, type Genre } from "@/data/genres";
+import { GENRES, getFamilyColor, type Genre } from "@/data/genres";
 import { useDataSource } from "@/context/DataSourceContext";
-import {
-  searchArtistsByTag as mbSearchArtistsByTag,
-  searchRecordingsByTag as mbSearchRecordingsByTag,
-  fetchArtistImage as mbFetchArtistImage,
-} from "@/lib/musicbrainz";
-import {
-  searchArtistsByTag as lfmSearchArtistsByTag,
-  searchTracksByTag as lfmSearchTracksByTag,
-} from "@/lib/lastfm";
-import {
-  searchArtistsByGenre as spSearchArtistsByGenre,
-  searchTracksByGenre as spSearchTracksByGenre,
-} from "@/lib/spotify";
-import { fetchArtistImageByMBID, fetchArtistImageByName } from "@/lib/audiodb";
+import { searchArtistsByTag as mbSearchArtistsByTag, searchRecordingsByTag as mbSearchRecordingsByTag } from "@/lib/musicbrainz";
+import { searchArtistsByTag as lfmSearchArtistsByTag, searchTracksByTag as lfmSearchTracksByTag } from "@/lib/lastfm";
+import { searchArtistsByGenre as spSearchArtistsByGenre, searchTracksByGenre as spSearchTracksByGenre } from "@/lib/spotify";
+import type { SearchArtist, SimpleTrack } from "@/lib/spotify";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ExternalLink, X, Music2 } from "lucide-react";
+import { ExternalLink, X, Music2, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
+import {
+  getFavoriteGenres,
+  addFavoriteGenre,
+  removeFavoriteGenre,
+} from "@/lib/favorites";
 
 interface GenreArtist {
   id: string;
@@ -27,8 +23,7 @@ interface GenreArtist {
   country?: string;
   disambiguation?: string;
   externalUrl: string;
-  mbid?: string;
-  imageUrl?: string; // pre-loaded (Spotify only)
+  imageUrl?: string;
 }
 
 interface GenreTrack {
@@ -36,7 +31,7 @@ interface GenreTrack {
   title: string;
   artist?: string;
   duration?: number; // ms
-  externalUrl: string;
+  externalUrl?: string;
 }
 
 interface Props {
@@ -51,128 +46,112 @@ const SOURCE_LABEL: Record<string, string> = {
   lastfm: "Last.fm",
 };
 
+function artistExternalUrl(a: SearchArtist): string {
+  if (a.source === "spotify") return `https://open.spotify.com/artist/${a.id}`;
+  if (a.source === "lastfm") return `https://www.last.fm/music/${encodeURIComponent(a.name)}`;
+  return `https://musicbrainz.org/artist/${a.id}`;
+}
+
+function trackExternalUrl(t: SimpleTrack, source: string): string {
+  if (source === "spotify") return `https://open.spotify.com/track/${t.id}`;
+  if (source === "musicbrainz") return `https://musicbrainz.org/recording/${t.id}`;
+  return "#";
+}
+
 export function GenreDetail({ genreId, onClose, onSelect }: Props) {
   const { dataSource } = useDataSource();
+  const { isAuthenticated } = useAuth();
   const genre = genreId ? GENRES.find((g) => g.id === genreId) || null : null;
 
   const [artists, setArtists] = useState<GenreArtist[]>([]);
   const [tracks, setTracks] = useState<GenreTrack[]>([]);
-  const [images, setImages] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [loadingTracks, setLoadingTracks] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
+
+  useEffect(() => {
+    if (!genreId || !isAuthenticated) {
+      setIsFavorited(false);
+      return;
+    }
+    getFavoriteGenres()
+      .then((ids) => setIsFavorited(ids.includes(genreId)))
+      .catch(() => setIsFavorited(false));
+  }, [genreId, isAuthenticated]);
+
+  const toggleFavorite = async () => {
+    if (!genreId) return;
+    setFavLoading(true);
+    try {
+      if (isFavorited) {
+        await removeFavoriteGenre(genreId);
+        setIsFavorited(false);
+      } else {
+        await addFavoriteGenre(genreId);
+        setIsFavorited(true);
+      }
+    } catch {
+      // Revert on error — state unchanged
+    }
+    setFavLoading(false);
+  };
 
   useEffect(() => {
     if (!genre) {
       setArtists([]);
       setTracks([]);
-      setImages({});
       return;
     }
     setLoading(true);
     setLoadingTracks(true);
     setArtists([]);
     setTracks([]);
-    setImages({});
 
-    const tag = genre.name.toLowerCase();
+    const gId = genre.id;
 
-    let artistPromise: Promise<GenreArtist[]>;
-    let trackPromise: Promise<GenreTrack[]>;
+    let artistPromise: Promise<SearchArtist[]>;
+    let trackPromise: Promise<SimpleTrack[]>;
 
     if (dataSource === "spotify") {
-      artistPromise = spSearchArtistsByGenre(genre.name, 10).then((list) =>
-        list.map((a) => ({
-          id: a.id,
-          name: a.name,
-          externalUrl: a.externalUrl || `https://open.spotify.com/artist/${a.id}`,
-          imageUrl: a.images?.[0]?.url,
-        }))
-      ).catch(() => []);
-
-      trackPromise = spSearchTracksByGenre(genre.name, 12).then((list) =>
-        list.map((t) => ({
-          id: t.id,
-          title: t.name,
-          artist: t.artistName,
-          duration: t.duration_ms,
-          externalUrl: `https://open.spotify.com/track/${t.id}`,
-        }))
-      ).catch(() => []);
-
+      artistPromise = spSearchArtistsByGenre(gId, 10).catch(() => []);
+      trackPromise = spSearchTracksByGenre(gId, 12).catch(() => []);
     } else if (dataSource === "lastfm") {
-      artistPromise = lfmSearchArtistsByTag(tag, 10).then((list) =>
-        list.map((a) => ({
-          id: a.mbid || `name:${a.name}`,
-          name: a.name,
-          externalUrl: a.url,
-          mbid: a.mbid || undefined,
-        }))
-      ).catch(() => []);
-
-      trackPromise = lfmSearchTracksByTag(tag, 12).then((list) =>
-        list.map((t) => ({
-          id: t.mbid || `lfm:${t.name}`,
-          title: t.name,
-          artist: t.artist?.name,
-          duration: t.duration ? Number(t.duration) * 1000 : undefined,
-          externalUrl: t.url,
-        }))
-      ).catch(() => []);
-
+      artistPromise = lfmSearchArtistsByTag(gId, 10).catch(() => []);
+      trackPromise = lfmSearchTracksByTag(gId, 12).catch(() => []);
     } else {
-      // MusicBrainz
-      artistPromise = mbSearchArtistsByTag(tag, 10).then((list) =>
-        list.map((a) => ({
-          id: a.id,
-          name: a.name,
-          country: a.country,
-          disambiguation: a.disambiguation,
-          externalUrl: `https://musicbrainz.org/artist/${a.id}`,
-          mbid: a.id,
-        }))
-      ).catch(() => []);
-
-      trackPromise = mbSearchRecordingsByTag(tag, 12).then((list) =>
-        list.map((r) => ({
-          id: r.id,
-          title: r.title,
-          artist: r.artist,
-          duration: r.length,
-          externalUrl: `https://musicbrainz.org/recording/${r.id}`,
-        }))
-      ).catch(() => []);
+      artistPromise = mbSearchArtistsByTag(gId, 10).catch(() => []);
+      trackPromise = mbSearchRecordingsByTag(gId, 12).catch(() => []);
     }
 
     artistPromise
-      .then(async (list) => {
-        setArtists(list);
-
-        if (dataSource === "spotify") {
-          // Spotify images come pre-loaded
-          setImages(Object.fromEntries(list.map((a) => [a.id, a.imageUrl ?? null])));
-        } else {
-          // MB / LFM: AudioDB primary, Wikipedia fallback for MB
-          const entries = await Promise.all(
-            list.map(async (a) => {
-              let img: string | null = null;
-              if (a.mbid) {
-                img = await fetchArtistImageByMBID(a.mbid);
-              }
-              if (!img) {
-                img = await fetchArtistImageByName(a.name);
-              }
-              if (!img && dataSource === "musicbrainz") {
-                img = await mbFetchArtistImage(a.name);
-              }
-              return [a.id, img] as const;
-            })
-          );
-          setImages(Object.fromEntries(entries));
-        }
+      .then((list) => {
+        setArtists(
+          list.map((a) => ({
+            id: a.id,
+            name: a.name,
+            country: a.country,
+            disambiguation: a.disambiguation,
+            externalUrl: artistExternalUrl(a),
+            imageUrl: a.image ?? undefined,
+          }))
+        );
       })
       .finally(() => setLoading(false));
 
-    trackPromise.then(setTracks).finally(() => setLoadingTracks(false));
+    trackPromise
+      .then((list) => {
+        setTracks(
+          list.map((t) => ({
+            id: t.id,
+            title: t.title,
+            artist: t.artistName,
+            duration: t.duration,
+            externalUrl: trackExternalUrl(t, dataSource),
+          }))
+        );
+      })
+      .finally(() => setLoadingTracks(false));
 
   }, [genre?.id, dataSource]);
 
@@ -186,7 +165,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
     .map((id) => GENRES.find((g) => g.id === id))
     .filter(Boolean) as Genre[];
 
-  const color = FAMILY_COLOR[genre.family];
+  const color = getFamilyColor(genre.family);
 
   return (
     <aside className="fixed right-0 top-0 z-30 h-screen w-[360px] max-w-[88vw] border-l border-border bg-card/95 backdrop-blur-xl shadow-[-12px_0_40px_-20px_hsl(0_0%_0%/0.7)] animate-fade-in">
@@ -199,6 +178,21 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
           />
           <h2 className="truncate text-sm font-semibold tracking-wide">{genre.name}</h2>
         </div>
+        {isAuthenticated && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleFavorite}
+            disabled={favLoading}
+            aria-label={isFavorited ? "Quitar de favoritos" : "Añadir a favoritos"}
+          >
+            <Heart
+              className={`h-4 w-4 transition-colors ${
+                isFavorited ? "fill-red-500 text-red-500" : "text-muted-foreground"
+              }`}
+            />
+          </Button>
+        )}
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Cerrar">
           <X className="h-4 w-4" />
         </Button>
@@ -238,8 +232,8 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
               <p className="text-xs text-muted-foreground">Sin resultados.</p>
             )}
             <ul className="space-y-2">
-              {artists.map((a) => {
-                const img = images[a.id];
+                  {artists.map((a) => {
+                const img = a.imageUrl ?? null;
                 return (
                   <li key={a.id}>
                     <a
@@ -288,7 +282,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
               {tracks.map((t, i) => (
                 <li key={t.id}>
                   <a
-                    href={t.externalUrl}
+                    href={t.externalUrl ?? "#"}
                     target="_blank"
                     rel="noreferrer"
                     className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors"
@@ -370,7 +364,7 @@ function Chips({ items, onSelect }: { items: Genre[]; onSelect: (id: string) => 
           <span
             aria-hidden
             className="h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: FAMILY_COLOR[g.family] }}
+            style={{ backgroundColor: getFamilyColor(g.family) }}
           />
           {g.name}
         </button>

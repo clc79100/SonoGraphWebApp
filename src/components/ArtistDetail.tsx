@@ -3,16 +3,11 @@ import {
   getArtistDetails,
   getArtistTopRecordings,
   getArtistAlbums as mbGetArtistAlbums,
-  fetchArtistImage as mbFetchArtistImage,
-  coverArtUrl,
 } from "@/lib/musicbrainz";
 import {
   getArtistById,
   getArtistAlbums as spGetArtistAlbums,
   getArtistTopTracks,
-  spToUnifiedArtist,
-  spToUnifiedAlbums,
-  spToUnifiedTracks,
   type UnifiedArtist,
   type UnifiedAlbum,
   type UnifiedTrack,
@@ -21,18 +16,29 @@ import {
   getArtistById as lfmGetArtistById,
   getArtistAlbums as lfmGetArtistAlbums,
   getArtistTopTracks as lfmGetArtistTopTracks,
-  lfmToUnifiedArtist,
-  lfmToUnifiedAlbums,
-  lfmToUnifiedTracks,
 } from "@/lib/lastfm";
-import { fetchArtistImageByMBID, fetchArtistImageByName } from "@/lib/audiodb";
 import type { DataSource } from "@/context/DataSourceContext";
-import { GENRES, FAMILY_COLOR } from "@/data/genres";
+import { GENRES, getFamilyColor } from "@/data/genres";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { ExternalLink, X, Music2, Disc3, Maximize2 } from "lucide-react";
+import { ExternalLink, X, Music2, Disc3, Maximize2, Heart } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import {
+  getFavoriteArtists,
+  addFavoriteArtist,
+  removeFavoriteArtist,
+  getFavoriteTracks,
+  addFavoriteTrack,
+  removeFavoriteTrack,
+  getFavoriteAlbums,
+  addFavoriteAlbum,
+  removeFavoriteAlbum,
+  type FavoriteTrack,
+  type FavoriteAlbum,
+  type FavoriteArtist,
+} from "@/lib/favorites";
 
 interface Props {
   artistId: string | null;
@@ -60,41 +66,6 @@ function matchGenresToIds(names: string[]): string[] {
   return out;
 }
 
-// Mapping MB → Unified
-function mbToUnifiedArtist(d: any, image: string | null = null): UnifiedArtist {
-  return {
-    id: d.id,
-    name: d.name,
-    genres: d.genres,
-    image: image,
-    country: d.country,
-    disambiguation: d.disambiguation,
-    type: d.type,
-    area: d.area,
-    beginDate: d.beginDate,
-    endDate: d.endDate,
-  };
-}
-
-function mbToUnifiedAlbums(albums: any[]): UnifiedAlbum[] {
-  return albums.map((rg) => ({
-    id: rg.id,
-    title: rg.title,
-    imageUrl: coverArtUrl(rg.id, 250),
-    year: rg.firstReleaseDate?.slice(0, 4),
-    externalUrl: `https://musicbrainz.org/release-group/${rg.id}`,
-  }));
-}
-
-function mbToUnifiedTracks(tracks: any[]): UnifiedTrack[] {
-  return tracks.map((r) => ({
-    id: r.id,
-    title: r.title,
-    duration: r.length,
-    externalUrl: `https://musicbrainz.org/recording/${r.id}`,
-  }));
-}
-
 export function ArtistDetail({
   artistId,
   artistNameHint,
@@ -104,10 +75,39 @@ export function ArtistDetail({
   onGenresResolved,
   onOpenExpandedView,
 }: Props) {
+  const { isAuthenticated } = useAuth();
+
   const [details, setDetails] = useState<UnifiedArtist | null>(null);
   const [tracks, setTracks] = useState<UnifiedTrack[]>([]);
   const [albums, setAlbums] = useState<UnifiedAlbum[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Favorites state
+  const [favArtists, setFavArtists] = useState<Map<string, FavoriteArtist>>(new Map());
+  const [favTracks, setFavTracks] = useState<Map<string, FavoriteTrack>>(new Map());
+  const [favAlbums, setFavAlbums] = useState<Map<string, FavoriteAlbum>>(new Map());
+  const [favArtistLoading, setFavArtistLoading] = useState(false);
+  const [favTrackLoading, setFavTrackLoading] = useState<Set<string>>(new Set());
+  const [favAlbumLoading, setFavAlbumLoading] = useState<Set<string>>(new Set());
+
+  // Load favorites on mount
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setFavArtists(new Map());
+      setFavTracks(new Map());
+      setFavAlbums(new Map());
+      return;
+    }
+    Promise.all([
+      getFavoriteArtists().then((list) => new Map(list.map((f) => [f.externalId, f]))),
+      getFavoriteTracks().then((list) => new Map(list.map((f) => [f.externalId, f]))),
+      getFavoriteAlbums().then((list) => new Map(list.map((f) => [f.externalId, f]))),
+    ]).then(([artists, trks, albs]) => {
+      setFavArtists(artists);
+      setFavTracks(trks);
+      setFavAlbums(albs);
+    }).catch(() => {});
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!artistId) {
@@ -129,58 +129,112 @@ export function ArtistDetail({
         getArtistTopTracks(artistId),
       ]).then(([d, alb, trks]) => {
         if (d) {
-          const unified = spToUnifiedArtist(d);
-          setDetails(unified);
-          setAlbums(spToUnifiedAlbums(alb));
-          setTracks(spToUnifiedTracks(trks));
+          setDetails(d);
+          setAlbums(alb);
+          setTracks(trks);
           onGenresResolved(matchGenresToIds(d.genres));
         }
         setLoading(false);
-      });
+      }).catch(() => setLoading(false));
+
     } else if (artistSource === "lastfm") {
       Promise.all([
         lfmGetArtistById(artistId),
         lfmGetArtistAlbums(artistId, 18),
         lfmGetArtistTopTracks(artistId, 12),
-      ]).then(async ([d, alb, trks]) => {
+      ]).then(([d, alb, trks]) => {
         if (d) {
-          const unified = lfmToUnifiedArtist(d);
-          const lfmImage = unified.image;
-          // AudioDB is the preferred image source; fall back to Last.fm image
-          const audiodbImage = artistId.startsWith("name:")
-            ? await fetchArtistImageByName(artistId.slice(5))
-            : (await fetchArtistImageByMBID(artistId)) ??
-              (await fetchArtistImageByName(unified.name));
-          unified.image = audiodbImage ?? lfmImage;
-          setDetails(unified);
-          setAlbums(lfmToUnifiedAlbums(alb));
-          setTracks(lfmToUnifiedTracks(trks));
-          onGenresResolved(matchGenresToIds(unified.genres));
+          setDetails(d);
+          setAlbums(alb);
+          setTracks(trks);
+          onGenresResolved(matchGenresToIds(d.genres));
         }
         setLoading(false);
       }).catch(() => setLoading(false));
+
     } else {
       // MusicBrainz
       Promise.all([
         getArtistDetails(artistId),
         getArtistTopRecordings(artistId, 12),
         mbGetArtistAlbums(artistId, 18),
-        mbFetchArtistImage(artistNameHint || ""),
-      ]).then(async ([d, recs, alb, img]) => {
+      ]).then(([d, recs, alb]) => {
         if (d) {
-          // AudioDB is preferred; fall back to MB/Wikipedia image
-          const finalImg = (await fetchArtistImageByMBID(artistId)) ?? img;
-          const unified = mbToUnifiedArtist(d, finalImg);
-          setDetails(unified);
-          setTracks(mbToUnifiedTracks(recs));
-          setAlbums(mbToUnifiedAlbums(alb));
+          setDetails(d);
+          setTracks(recs);
+          setAlbums(alb);
           onGenresResolved(matchGenresToIds(d.genres));
         }
         setLoading(false);
-      });
+      }).catch(() => setLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistId, artistSource]);
+
+  const toggleArtistFav = async () => {
+    if (!details || !artistId) return;
+    setFavArtistLoading(true);
+    try {
+      if (favArtists.has(artistId)) {
+        const existing = favArtists.get(artistId)!;
+        await removeFavoriteArtist(existing.id);
+        setFavArtists((prev) => { const m = new Map(prev); m.delete(artistId); return m; });
+      } else {
+        await addFavoriteArtist({
+          externalId: artistId,
+          name: details.name,
+          imageUrl: details.image ?? undefined,
+          source: artistSource,
+        });
+        const updated = await getFavoriteArtists();
+        setFavArtists(new Map(updated.map((f) => [f.externalId, f])));
+      }
+    } catch {}
+    setFavArtistLoading(false);
+  };
+
+  const toggleTrackFav = async (track: UnifiedTrack) => {
+    setFavTrackLoading((prev) => new Set(prev).add(track.id));
+    try {
+      if (favTracks.has(track.id)) {
+        const existing = favTracks.get(track.id)!;
+        await removeFavoriteTrack(existing.id);
+        setFavTracks((prev) => { const m = new Map(prev); m.delete(track.id); return m; });
+      } else {
+        await addFavoriteTrack({
+          externalId: track.id,
+          title: track.title,
+          artistName: details?.name,
+          source: artistSource,
+        });
+        const updated = await getFavoriteTracks();
+        setFavTracks(new Map(updated.map((f) => [f.externalId, f])));
+      }
+    } catch {}
+    setFavTrackLoading((prev) => { const s = new Set(prev); s.delete(track.id); return s; });
+  };
+
+  const toggleAlbumFav = async (album: UnifiedAlbum) => {
+    setFavAlbumLoading((prev) => new Set(prev).add(album.id));
+    try {
+      if (favAlbums.has(album.id)) {
+        const existing = favAlbums.get(album.id)!;
+        await removeFavoriteAlbum(existing.id);
+        setFavAlbums((prev) => { const m = new Map(prev); m.delete(album.id); return m; });
+      } else {
+        await addFavoriteAlbum({
+          externalId: album.id,
+          title: album.title,
+          artistName: details?.name,
+          imageUrl: album.imageUrl,
+          source: artistSource,
+        });
+        const updated = await getFavoriteAlbums();
+        setFavAlbums(new Map(updated.map((f) => [f.externalId, f])));
+      }
+    } catch {}
+    setFavAlbumLoading((prev) => { const s = new Set(prev); s.delete(album.id); return s; });
+  };
 
   const matchedGenres = useMemo(() => {
     if (!details) return [];
@@ -195,10 +249,9 @@ export function ArtistDetail({
 
   const externalUrl =
     artistSource === "spotify"
-      ? `https://open.spotify.com/artist/${artistId}`
+      ? details?.externalUrl || `https://open.spotify.com/artist/${artistId}`
       : artistSource === "lastfm"
-      ? details?.externalUrl ||
-        `https://www.last.fm/music/${encodeURIComponent(name)}`
+      ? details?.externalUrl || `https://www.last.fm/music/${encodeURIComponent(name)}`
       : `https://musicbrainz.org/artist/${artistId}`;
 
   const externalLabel =
@@ -228,6 +281,23 @@ export function ArtistDetail({
           </span>
         </div>
         <div className="flex gap-1">
+          {isAuthenticated && details && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleArtistFav}
+              disabled={favArtistLoading}
+              aria-label={favArtists.has(artistId ?? "") ? "Quitar de favoritos" : "Añadir a favoritos"}
+            >
+              <Heart
+                className={`h-4 w-4 transition-colors ${
+                  favArtists.has(artistId ?? "")
+                    ? "fill-red-500 text-red-500"
+                    : "text-muted-foreground"
+                }`}
+              />
+            </Button>
+          )}
           {onOpenExpandedView && details && (
             <Button
               variant="ghost"
@@ -295,7 +365,7 @@ export function ArtistDetail({
                   <span
                     aria-hidden
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: FAMILY_COLOR[g.family] }}
+                    style={{ backgroundColor: getFamilyColor(g.family) }}
                   />
                   {g.name}
                 </button>
@@ -323,12 +393,28 @@ export function ArtistDetail({
             )}
             <ol className="space-y-1">
               {tracks.map((t, i) => (
-                <li key={t.id}>
+                <li key={t.id} className="group flex items-center gap-1 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors">
+                  {isAuthenticated && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); toggleTrackFav(t); }}
+                      disabled={favTrackLoading.has(t.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      aria-label={favTracks.has(t.id) ? "Quitar" : "Añadir"}
+                    >
+                      <Heart
+                        className={`h-3 w-3 ${
+                          favTracks.has(t.id)
+                            ? "fill-red-500 text-red-500"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                    </button>
+                  )}
                   <a
-                    href={t.externalUrl}
+                    href={t.externalUrl ?? "#"}
                     target="_blank"
                     rel="noreferrer"
-                    className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors"
+                    className="flex flex-1 items-center gap-2 min-w-0"
                   >
                     <span className="w-5 text-right font-mono text-[10px] text-muted-foreground shrink-0">
                       {i + 1}
@@ -362,47 +448,64 @@ export function ArtistDetail({
             )}
             <div className="grid grid-cols-2 gap-2">
               {albums.map((alb) => (
-                <a
-                  key={alb.id}
-                  href={alb.externalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group block w-full min-w-0"
-                  title={alb.title}
-                >
-                  <div className="relative aspect-square w-full min-w-0 overflow-hidden rounded-md border border-border bg-secondary/40">
-                    {alb.imageUrl ? (
-                      <img
-                        src={alb.imageUrl}
-                        alt={alb.title}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                        onError={(e) => {
-                          const el = e.currentTarget;
-                          el.style.display = "none";
-                          const parent = el.parentElement;
-                          if (parent && !parent.querySelector(".no-art")) {
-                            const span = document.createElement("span");
-                            span.className =
-                              "no-art absolute inset-0 flex items-center justify-center text-[10px] font-mono text-muted-foreground p-1 text-center";
-                            span.textContent = alb.title.slice(0, 20);
-                            parent.appendChild(span);
-                          }
-                        }}
-                      />
-                    ) : (
-                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-muted-foreground p-1 text-center">
-                        {alb.title.slice(0, 20)}
-                      </span>
+                <div key={alb.id} className="group relative">
+                  <a
+                    href={alb.externalUrl ?? "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block w-full min-w-0"
+                    title={alb.title}
+                  >
+                    <div className="relative aspect-square w-full min-w-0 overflow-hidden rounded-md border border-border bg-secondary/40">
+                      {alb.imageUrl ? (
+                        <img
+                          src={alb.imageUrl}
+                          alt={alb.title}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                          onError={(e) => {
+                            const el = e.currentTarget;
+                            el.style.display = "none";
+                            const parent = el.parentElement;
+                            if (parent && !parent.querySelector(".no-art")) {
+                              const span = document.createElement("span");
+                              span.className =
+                                "no-art absolute inset-0 flex items-center justify-center text-[10px] font-mono text-muted-foreground p-1 text-center";
+                              span.textContent = alb.title.slice(0, 20);
+                              parent.appendChild(span);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-muted-foreground p-1 text-center">
+                          {alb.title.slice(0, 20)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[10px] text-foreground/90 group-hover:text-primary transition-colors line-clamp-2">
+                      {alb.title}
+                    </p>
+                    {alb.year && (
+                      <p className="truncate font-mono text-[9px] text-muted-foreground">{alb.year}</p>
                     )}
-                  </div>
-                  <p className="mt-1 text-[10px] text-foreground/90 group-hover:text-primary transition-colors line-clamp-2">
-                    {alb.title}
-                  </p>
-                  {alb.year && (
-                    <p className="truncate font-mono text-[9px] text-muted-foreground">{alb.year}</p>
+                  </a>
+                  {isAuthenticated && (
+                    <button
+                      onClick={() => toggleAlbumFav(alb)}
+                      disabled={favAlbumLoading.has(alb.id)}
+                      className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label={favAlbums.has(alb.id) ? "Quitar" : "Añadir"}
+                    >
+                      <Heart
+                        className={`h-4 w-4 drop-shadow-md ${
+                          favAlbums.has(alb.id)
+                            ? "fill-red-500 text-red-500"
+                            : "text-white"
+                        }`}
+                      />
+                    </button>
                   )}
-                </a>
+                </div>
               ))}
             </div>
           </Section>

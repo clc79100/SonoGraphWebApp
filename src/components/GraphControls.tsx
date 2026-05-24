@@ -8,6 +8,8 @@ import { searchArtistsByName } from "@/lib/musicbrainz";
 import { searchArtistByName as spSearchArtistByName, SpotifyAPIError, type SearchArtist } from "@/lib/spotify";
 import { searchArtistByName as lfmSearchArtistByName, LastfmAPIError } from "@/lib/lastfm";
 import { useDataSource } from "@/context/DataSourceContext";
+import { useAuth } from "@/context/AuthContext";
+import { AuthModal } from "@/components/AuthModal";
 
 export type SearchMode = "genre" | "artist";
 
@@ -47,6 +49,8 @@ export function GraphControls({
   selectedGenreId,
 }: Props) {
   const { dataSource, setDataSource } = useDataSource();
+  const { user, isAuthenticated, logout } = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<FamilyId>>(new Set());
   const [artistResults, setArtistResults] = useState<SearchArtist[]>([]);
   const [loadingArtists, setLoadingArtists] = useState(false);
@@ -173,8 +177,27 @@ export function GraphControls({
       <div className="pointer-events-auto rounded-xl border border-border bg-card/80 backdrop-blur-xl p-3 shadow-xl">
         <div className="mb-3 flex items-baseline justify-between gap-2">
           <h1 className="font-mono text-sm tracking-[0.2em] text-foreground">SONOGRAPH</h1>
-          <span className="text-[10px] font-mono text-muted-foreground">v0.1</span>
+          <div className="flex items-center gap-1.5">
+            {isAuthenticated ? (
+              <button
+                onClick={logout}
+                className="text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                title="Cerrar sesión"
+              >
+                {user?.email ?? "Sesión"}
+              </button>
+            ) : (
+              <button
+                onClick={() => setAuthOpen(true)}
+                className="text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Iniciar sesión
+              </button>
+            )}
+            <span className="text-[10px] font-mono text-muted-foreground">v0.1</span>
+          </div>
         </div>
+        <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
 
         {/* Modo búsqueda toggle */}
         <div className="mb-2 flex rounded-md border border-border bg-background/40 p-0.5 text-[11px] font-mono">
