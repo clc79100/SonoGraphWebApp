@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FAMILIES, GENRES, type FamilyId, type Genre } from "@/data/genres";
 import { Input } from "@/components/ui/input";
 import { Search, ChevronRight, Loader2, User, Disc3 } from "lucide-react";
+import { SiMusicbrainz, SiSpotify, SiLastdotfm } from "@icons-pack/react-simple-icons";
 import { cn } from "@/lib/utils";
-import { searchArtistsByName, type MBArtist } from "@/lib/musicbrainz";
+import { searchArtistsByName } from "@/lib/musicbrainz";
+import { searchArtistByName as spSearchArtistByName, SpotifyAPIError, type SearchArtist } from "@/lib/spotify";
+import { searchArtistByName as lfmSearchArtistByName, LastfmAPIError } from "@/lib/lastfm";
+import { useDataSource } from "@/context/DataSourceContext";
 
 export type SearchMode = "genre" | "artist";
 
@@ -16,7 +20,8 @@ interface Props {
   toggleFamily: (id: FamilyId) => void;
   clearFamilies: () => void;
   onSelectGenre: (id: string) => void;
-  onSelectArtist: (artist: MBArtist) => void;
+  onSelectArtist: (artist: SearchArtist) => void;
+  selectedGenreId?: string | null;
 }
 
 function mainSubgenres(family: FamilyId, limit = 14): Genre[] {
@@ -39,11 +44,15 @@ export function GraphControls({
   clearFamilies,
   onSelectGenre,
   onSelectArtist,
+  selectedGenreId,
 }: Props) {
+  const { dataSource, setDataSource } = useDataSource();
   const [expanded, setExpanded] = useState<Set<FamilyId>>(new Set());
-  const [artistResults, setArtistResults] = useState<MBArtist[]>([]);
+  const [artistResults, setArtistResults] = useState<SearchArtist[]>([]);
   const [loadingArtists, setLoadingArtists] = useState(false);
+  const [artistError, setArtistError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const familyItemRefs = useRef<Partial<Record<FamilyId, HTMLLIElement | null>>>({});
 
   const subgenresByFamily = useMemo(() => {
     const map = new Map<FamilyId, Genre[]>();
@@ -51,30 +60,104 @@ export function GraphControls({
     return map;
   }, []);
 
-  // Debounced artist search
+  // Búsqueda debounced según fuente activa
   useEffect(() => {
     if (searchMode !== "artist") {
       setArtistResults([]);
+      setArtistError(null);
       setLoadingArtists(false);
       return;
     }
     const q = search.trim();
     if (q.length < 2) {
       setArtistResults([]);
+      setArtistError(null);
       setLoadingArtists(false);
       return;
     }
     setLoadingArtists(true);
+    setArtistError(null);
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(async () => {
-      const list = await searchArtistsByName(q, 10);
-      setArtistResults(list);
+      try {
+        if (dataSource === "spotify") {
+          const list = await spSearchArtistByName(q, 10);
+          setArtistResults(
+            list.map((a) => ({
+              id: a.id,
+              name: a.name,
+              disambiguation: a.popularity != null ? `popularidad ${a.popularity}` : undefined,
+              source: "spotify" as const,
+            }))
+          );
+        } else if (dataSource === "lastfm") {
+          const list = await lfmSearchArtistByName(q, 10);
+          setArtistResults(
+            list.map((a) => ({
+              id: a.mbid && a.mbid.length > 0 ? a.mbid : `name:${a.name}`,
+              name: a.name,
+              disambiguation: a.listeners
+                ? `${Number(a.listeners).toLocaleString()} oyentes`
+                : undefined,
+              source: "lastfm" as const,
+            }))
+          );
+        } else {
+          const list = await searchArtistsByName(q, 10);
+          setArtistResults(
+            list.map((a) => ({
+              id: a.id,
+              name: a.name,
+              country: a.country,
+              disambiguation: a.disambiguation,
+              source: "musicbrainz" as const,
+            }))
+          );
+        }
+      } catch (err) {
+        if (err instanceof SpotifyAPIError && err.code === "premium_required") {
+          setArtistError("Spotify requiere cuenta Premium activa en el panel de desarrollador.");
+        } else if (err instanceof LastfmAPIError) {
+          setArtistError(
+            err.code === "no_credentials"
+              ? "Falta VITE_LASTFM_API_KEY en .env."
+              : "Error al conectar con Last.fm."
+          );
+        } else {
+          setArtistError("Error al conectar con la fuente seleccionada.");
+        }
+        setArtistResults([]);
+      }
       setLoadingArtists(false);
     }, 350);
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [search, searchMode]);
+  }, [search, searchMode, dataSource]);
+
+  // Limpiar resultados al cambiar fuente
+  useEffect(() => {
+    setArtistResults([]);
+    setArtistError(null);
+  }, [dataSource]);
+
+  // When a genre is selected, open its family (close others) and scroll to it
+  useEffect(() => {
+    if (!selectedGenreId) {
+      setExpanded(new Set());
+      return;
+    }
+    const genre = GENRES.find((g) => g.id === selectedGenreId);
+    if (!genre) return;
+    setExpanded(new Set([genre.family]));
+    // Wait for DOM update then scroll the family row into view
+    requestAnimationFrame(() => {
+      familyItemRefs.current[genre.family]?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [selectedGenreId]);
 
   const toggleExpand = (id: FamilyId) => {
     setExpanded((prev) => {
@@ -93,7 +176,7 @@ export function GraphControls({
           <span className="text-[10px] font-mono text-muted-foreground">v0.1</span>
         </div>
 
-        {/* Mode toggle */}
+        {/* Modo búsqueda toggle */}
         <div className="mb-2 flex rounded-md border border-border bg-background/40 p-0.5 text-[11px] font-mono">
           {(
             [
@@ -131,10 +214,13 @@ export function GraphControls({
           />
         </div>
 
-        {/* Artist search results dropdown */}
+        {/* Resultados de búsqueda de artista */}
         {searchMode === "artist" && search.trim().length >= 2 && (
           <div className="mt-2 max-h-[260px] overflow-y-auto rounded-md border border-border bg-background/60">
-            {!loadingArtists && artistResults.length === 0 && (
+            {artistError && (
+              <p className="px-2 py-2 text-[11px] text-destructive/90 leading-snug">{artistError}</p>
+            )}
+            {!loadingArtists && !artistError && artistResults.length === 0 && (
               <p className="px-2 py-2 text-[11px] text-muted-foreground">Sin resultados.</p>
             )}
             <ul className="divide-y divide-border/40">
@@ -172,6 +258,104 @@ export function GraphControls({
             ? "Atlas de géneros. Click en un nodo para explorar."
             : "Busca un artista para iluminar sus géneros en el grafo."}
         </p>
+
+        {/* Selector de fuente de datos */}
+        <div className="mt-3 border-t border-border/60 pt-3">
+          <p className="mb-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            Fuente
+          </p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {/* MusicBrainz */}
+            <button
+              onClick={() => setDataSource("musicbrainz")}
+              className={cn(
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                dataSource === "musicbrainz"
+                  ? "border-transparent text-foreground"
+                  : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
+              )}
+              style={
+                dataSource === "musicbrainz"
+                  ? {
+                      background: "linear-gradient(90deg, rgba(186,71,143,0.2) 0%, rgba(235,116,59,0.2) 100%)",
+                      boxShadow: "-6px 0 18px 2px rgba(186,71,143,0.5), 6px 0 18px 2px rgba(235,116,59,0.5)",
+                      borderColor: "rgba(186,71,143,0.55)",
+                    }
+                  : undefined
+              }
+            >
+              <SiMusicbrainz
+                size={22}
+                style={
+                  dataSource === "musicbrainz"
+                    ? { color: "#eb743b" }
+                    : { opacity: 0.45 }
+                }
+              />
+              <span className="text-[9px] font-mono tracking-wide">MusicBrainz</span>
+            </button>
+
+            {/* Spotify */}
+            <button
+              onClick={() => setDataSource("spotify")}
+              className={cn(
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                dataSource === "spotify"
+                  ? "border-transparent text-foreground"
+                  : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
+              )}
+              style={
+                dataSource === "spotify"
+                  ? {
+                      background: "rgba(23,216,96,0.12)",
+                      boxShadow: "0 0 16px 4px rgba(23,216,96,0.45)",
+                      borderColor: "rgba(23,216,96,0.5)",
+                    }
+                  : undefined
+              }
+            >
+              <SiSpotify
+                size={22}
+                style={
+                  dataSource === "spotify"
+                    ? { color: "#17d860" }
+                    : { opacity: 0.45 }
+                }
+              />
+              <span className="text-[9px] font-mono tracking-wide">Spotify</span>
+            </button>
+
+            {/* Last.fm */}
+            <button
+              onClick={() => setDataSource("lastfm")}
+              className={cn(
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                dataSource === "lastfm"
+                  ? "border-transparent text-foreground"
+                  : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
+              )}
+              style={
+                dataSource === "lastfm"
+                  ? {
+                      background: "rgba(208,35,43,0.12)",
+                      boxShadow: "0 0 16px 4px rgba(208,35,43,0.45)",
+                      borderColor: "rgba(208,35,43,0.5)",
+                    }
+                  : undefined
+              }
+            >
+              <SiLastdotfm
+                size={22}
+                style={
+                  dataSource === "lastfm"
+                    ? { color: "#d0232b" }
+                    : { opacity: 0.45 }
+                }
+              />
+              <span className="text-[9px] font-mono tracking-wide">Last.fm</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="pointer-events-auto mt-3 flex-1 overflow-y-auto rounded-xl border border-border bg-card/80 backdrop-blur-xl p-3 shadow-xl">
@@ -195,7 +379,7 @@ export function GraphControls({
             const dim = activeFamilies.size > 0 && !isActive;
             const subs = subgenresByFamily.get(f.id) || [];
             return (
-              <li key={f.id} className="rounded-md">
+              <li key={f.id} className="rounded-md" ref={(el) => { familyItemRefs.current[f.id] = el; }}>
                 <div
                   className={cn(
                     "group flex w-full items-center gap-1 rounded-md text-left text-xs transition-colors",
@@ -257,3 +441,4 @@ export function GraphControls({
     </div>
   );
 }
+

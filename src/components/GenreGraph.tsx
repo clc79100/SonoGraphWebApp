@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import ForceGraph2D, { ForceGraphMethods } from "react-force-graph-2d";
 import { GENRES, FAMILY_COLOR, type Genre, type FamilyId } from "@/data/genres";
 
@@ -21,6 +21,7 @@ interface Props {
   height: number;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  onDeselectAll?: () => void;
   search: string;
   activeFamilies: Set<FamilyId>;
   highlightedIds?: Set<string>;
@@ -50,9 +51,21 @@ function buildGraph() {
   return { nodes, links };
 }
 
-export function GenreGraph({ width, height, selectedId, onSelect, search, activeFamilies, highlightedIds }: Props) {
+export function GenreGraph({ width, height, selectedId, onSelect, onDeselectAll, search, activeFamilies, highlightedIds }: Props) {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const data = useMemo(buildGraph, []);
+
+  // Grab canvas reference after first render for cursor control
+  useEffect(() => {
+    canvasRef.current = document.querySelector("canvas");
+  }, []);
+
+  const handleNodeHover = useCallback((node: any) => {
+    if (canvasRef.current) {
+      canvasRef.current.style.cursor = node ? "pointer" : "default";
+    }
+  }, []);
 
   // Highlight set for search and family filter (and artist highlights)
   const matchSet = useMemo(() => {
@@ -122,7 +135,8 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
         return selectedId && (s === selectedId || t === selectedId) ? 1.4 : 0.5;
       }}
       onNodeClick={(n: any) => onSelect(n.id)}
-      onBackgroundClick={() => onSelect(null)}
+      onNodeHover={handleNodeHover}
+      onBackgroundClick={() => { onSelect(null); onDeselectAll?.(); }}
       nodeCanvasObject={(node: any, ctx, globalScale) => {
         const n = node as GraphNode & { x: number; y: number };
         const isMatch = matchSet.has(n.id);
@@ -146,30 +160,34 @@ export function GenreGraph({ width, height, selectedId, onSelect, search, active
           : baseColor;
 
         const r = n.val;
-        if (isHighlighted) {
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, r + 7, 0, 2 * Math.PI);
-          ctx.fillStyle = "hsla(195, 90%, 60%, 0.28)";
-          ctx.fill();
-        }
+
+        // Glow via canvas shadow — node's own color, no white border ring
         if (isSelected) {
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, r + 6, 0, 2 * Math.PI);
-          ctx.fillStyle = "hsla(265, 85%, 70%, 0.22)";
-          ctx.fill();
+          ctx.shadowColor = baseColor;
+          ctx.shadowBlur = 24;
+        } else if (isNeighbor && selectedId) {
+          ctx.shadowColor = baseColor;
+          ctx.shadowBlur = 13;
+        } else if (isHighlighted) {
+          ctx.shadowColor = "hsla(195, 90%, 65%, 0.95)";
+          ctx.shadowBlur = 16;
         }
+
+        // Selected node renders slightly larger
+        const drawR = isSelected ? r * 1.3 : r;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+        ctx.arc(n.x, n.y, drawR, 0, 2 * Math.PI);
         ctx.fillStyle = dim ? dimColor : baseColor;
         ctx.fill();
+
+        // Reset shadow so it doesn't bleed into labels
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+
+        // Cyan ring only for artist-matched highlights
         if (isHighlighted) {
           ctx.lineWidth = 1.6 / globalScale;
           ctx.strokeStyle = "hsla(195, 95%, 75%, 0.95)";
-          ctx.stroke();
-        }
-        if (isSelected || isNeighbor || (isMatch && (selectedId || matchSet.size < 50))) {
-          ctx.lineWidth = (isSelected ? 1.6 : 0.8) / globalScale;
-          ctx.strokeStyle = isSelected ? "hsla(0,0%,100%,0.9)" : "hsla(0,0%,100%,0.5)";
           ctx.stroke();
         }
 

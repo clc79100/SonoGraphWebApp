@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fix Radix ScrollArea: inner wrapper uses display:table which breaks
+   width:100% in grid/flex children (e.g. grid-cols-2 collapses to content width). */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}
+
 @layer base {
   :root {
     /* Dark Obsidian — único modo */

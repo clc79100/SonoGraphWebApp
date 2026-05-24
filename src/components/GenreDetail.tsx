@@ -1,17 +1,43 @@
 import { useEffect, useState } from "react";
 import { GENRES, FAMILY_COLOR, type Genre } from "@/data/genres";
+import { useDataSource } from "@/context/DataSourceContext";
 import {
-  searchArtistsByTag,
-  searchRecordingsByTag,
-  fetchArtistImage,
-  type MBArtist,
-  type MBRecording,
+  searchArtistsByTag as mbSearchArtistsByTag,
+  searchRecordingsByTag as mbSearchRecordingsByTag,
+  fetchArtistImage as mbFetchArtistImage,
 } from "@/lib/musicbrainz";
+import {
+  searchArtistsByTag as lfmSearchArtistsByTag,
+  searchTracksByTag as lfmSearchTracksByTag,
+} from "@/lib/lastfm";
+import {
+  searchArtistsByGenre as spSearchArtistsByGenre,
+  searchTracksByGenre as spSearchTracksByGenre,
+} from "@/lib/spotify";
+import { fetchArtistImageByMBID, fetchArtistImageByName } from "@/lib/audiodb";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ExternalLink, X, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+interface GenreArtist {
+  id: string;
+  name: string;
+  country?: string;
+  disambiguation?: string;
+  externalUrl: string;
+  mbid?: string;
+  imageUrl?: string; // pre-loaded (Spotify only)
+}
+
+interface GenreTrack {
+  id: string;
+  title: string;
+  artist?: string;
+  duration?: number; // ms
+  externalUrl: string;
+}
 
 interface Props {
   genreId: string | null;
@@ -19,10 +45,18 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
+const SOURCE_LABEL: Record<string, string> = {
+  musicbrainz: "MusicBrainz",
+  spotify: "Spotify",
+  lastfm: "Last.fm",
+};
+
 export function GenreDetail({ genreId, onClose, onSelect }: Props) {
+  const { dataSource } = useDataSource();
   const genre = genreId ? GENRES.find((g) => g.id === genreId) || null : null;
-  const [artists, setArtists] = useState<MBArtist[]>([]);
-  const [tracks, setTracks] = useState<MBRecording[]>([]);
+
+  const [artists, setArtists] = useState<GenreArtist[]>([]);
+  const [tracks, setTracks] = useState<GenreTrack[]>([]);
   const [images, setImages] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(false);
   const [loadingTracks, setLoadingTracks] = useState(false);
@@ -39,23 +73,108 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
     setArtists([]);
     setTracks([]);
     setImages({});
+
     const tag = genre.name.toLowerCase();
 
-    searchArtistsByTag(tag, 10)
+    let artistPromise: Promise<GenreArtist[]>;
+    let trackPromise: Promise<GenreTrack[]>;
+
+    if (dataSource === "spotify") {
+      artistPromise = spSearchArtistsByGenre(genre.name, 10).then((list) =>
+        list.map((a) => ({
+          id: a.id,
+          name: a.name,
+          externalUrl: a.externalUrl || `https://open.spotify.com/artist/${a.id}`,
+          imageUrl: a.images?.[0]?.url,
+        }))
+      ).catch(() => []);
+
+      trackPromise = spSearchTracksByGenre(genre.name, 12).then((list) =>
+        list.map((t) => ({
+          id: t.id,
+          title: t.name,
+          artist: t.artistName,
+          duration: t.duration_ms,
+          externalUrl: `https://open.spotify.com/track/${t.id}`,
+        }))
+      ).catch(() => []);
+
+    } else if (dataSource === "lastfm") {
+      artistPromise = lfmSearchArtistsByTag(tag, 10).then((list) =>
+        list.map((a) => ({
+          id: a.mbid || `name:${a.name}`,
+          name: a.name,
+          externalUrl: a.url,
+          mbid: a.mbid || undefined,
+        }))
+      ).catch(() => []);
+
+      trackPromise = lfmSearchTracksByTag(tag, 12).then((list) =>
+        list.map((t) => ({
+          id: t.mbid || `lfm:${t.name}`,
+          title: t.name,
+          artist: t.artist?.name,
+          duration: t.duration ? Number(t.duration) * 1000 : undefined,
+          externalUrl: t.url,
+        }))
+      ).catch(() => []);
+
+    } else {
+      // MusicBrainz
+      artistPromise = mbSearchArtistsByTag(tag, 10).then((list) =>
+        list.map((a) => ({
+          id: a.id,
+          name: a.name,
+          country: a.country,
+          disambiguation: a.disambiguation,
+          externalUrl: `https://musicbrainz.org/artist/${a.id}`,
+          mbid: a.id,
+        }))
+      ).catch(() => []);
+
+      trackPromise = mbSearchRecordingsByTag(tag, 12).then((list) =>
+        list.map((r) => ({
+          id: r.id,
+          title: r.title,
+          artist: r.artist,
+          duration: r.length,
+          externalUrl: `https://musicbrainz.org/recording/${r.id}`,
+        }))
+      ).catch(() => []);
+    }
+
+    artistPromise
       .then(async (list) => {
         setArtists(list);
-        // Cargar imágenes en paralelo (Wikipedia)
-        const entries = await Promise.all(
-          list.map(async (a) => [a.id, await fetchArtistImage(a.name)] as const),
-        );
-        setImages(Object.fromEntries(entries));
+
+        if (dataSource === "spotify") {
+          // Spotify images come pre-loaded
+          setImages(Object.fromEntries(list.map((a) => [a.id, a.imageUrl ?? null])));
+        } else {
+          // MB / LFM: AudioDB primary, Wikipedia fallback for MB
+          const entries = await Promise.all(
+            list.map(async (a) => {
+              let img: string | null = null;
+              if (a.mbid) {
+                img = await fetchArtistImageByMBID(a.mbid);
+              }
+              if (!img) {
+                img = await fetchArtistImageByName(a.name);
+              }
+              if (!img && dataSource === "musicbrainz") {
+                img = await mbFetchArtistImage(a.name);
+              }
+              return [a.id, img] as const;
+            })
+          );
+          setImages(Object.fromEntries(entries));
+        }
       })
       .finally(() => setLoading(false));
 
-    searchRecordingsByTag(tag, 12)
-      .then(setTracks)
-      .finally(() => setLoadingTracks(false));
-  }, [genre?.id]);
+    trackPromise.then(setTracks).finally(() => setLoadingTracks(false));
+
+  }, [genre?.id, dataSource]);
 
   if (!genre) return null;
 
@@ -113,7 +232,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
             </Section>
           )}
 
-          <Section title="Artistas (MusicBrainz)">
+          <Section title={`Artistas · ${SOURCE_LABEL[dataSource]}`}>
             {loading && <p className="text-xs text-muted-foreground">Cargando…</p>}
             {!loading && artists.length === 0 && (
               <p className="text-xs text-muted-foreground">Sin resultados.</p>
@@ -124,12 +243,12 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
                 return (
                   <li key={a.id}>
                     <a
-                      href={`https://musicbrainz.org/artist/${a.id}`}
+                      href={a.externalUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="group flex items-center gap-2.5 rounded-md p-1.5 -mx-1.5 hover:bg-secondary/60 transition-colors"
                     >
-                      <Avatar className="h-9 w-9 border border-border">
+                      <Avatar className="h-9 w-9 border border-border shrink-0">
                         {img && <AvatarImage src={img} alt={a.name} />}
                         <AvatarFallback className="text-[10px] bg-secondary">
                           {a.name.slice(0, 2).toUpperCase()}
@@ -160,7 +279,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
             </ul>
           </Section>
 
-          <Section title="Top canciones">
+          <Section title={`Top canciones · ${SOURCE_LABEL[dataSource]}`}>
             {loadingTracks && <p className="text-xs text-muted-foreground">Cargando…</p>}
             {!loadingTracks && tracks.length === 0 && (
               <p className="text-xs text-muted-foreground">Sin resultados.</p>
@@ -169,7 +288,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
               {tracks.map((t, i) => (
                 <li key={t.id}>
                   <a
-                    href={`https://musicbrainz.org/recording/${t.id}`}
+                    href={t.externalUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors"
@@ -186,9 +305,9 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
                         <p className="truncate text-[11px] text-muted-foreground">{t.artist}</p>
                       )}
                     </div>
-                    {t.length && (
+                    {t.duration && (
                       <span className="font-mono text-[10px] text-muted-foreground shrink-0">
-                        {formatDuration(t.length)}
+                        {formatDuration(t.duration)}
                       </span>
                     )}
                   </a>
