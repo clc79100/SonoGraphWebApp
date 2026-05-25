@@ -1,4 +1,9 @@
-# Sonograph — Contexto para migración a backend
+# Sonograph — Contexto del proyecto
+
+> **Estado**: la migración a backend ya está hecha. El frontend ya **no** llama a las
+> APIs externas directamente ni hardcodea géneros: todo pasa por la API propia
+> (SonGraphAPI) vía `src/lib/api.ts` (`apiFetch`). Las secciones de abajo describen la
+> arquitectura actual; el contrato detallado de endpoints está en `BACKEND.md`.
 
 ## ¿Qué es Sonograph?
 
@@ -16,16 +21,28 @@ El selector de **Fuente** (MusicBrainz / Spotify / Last.fm) afecta tanto las bú
 - **Runtime**: Vite + React 18 + TypeScript
 - **UI**: shadcn/ui (Radix primitives) + Tailwind CSS 3
 - **Grafo**: react-force-graph-2d (canvas 2D)
-- **Estado**: useState local + Context (`DataSourceContext` para la fuente activa)
-- **Dev server**: puerto 8080/8081
+- **Estado**: useState local + Context (`DataSourceContext` para la fuente activa,
+  `AuthContext` para la sesión)
+- **Data fetching**: @tanstack/react-query + `apiFetch` (`src/lib/api.ts`)
+- **Dev server**: puerto 8080
 
-No hay backend. Todo corre en el browser. Los API keys de Spotify y Last.fm están expuestos en variables de entorno `VITE_*` (visibles en el bundle).
+El frontend consume la API propia (SonGraphAPI). La única variable de entorno necesaria
+es `VITE_API_URL` (base del backend; default `http://localhost:3000`). Las credenciales
+de Spotify / Last.fm se movieron al backend y ya **no** están en el bundle (aparecen
+comentadas en `.env` solo como referencia histórica).
 
 ---
 
 ## Datos de géneros — estado actual
 
-**Archivo**: `src/data/genres.ts` (~612 líneas, hardcodeado)
+**Archivos**: `src/data/genreStore.ts` (estado + carga desde backend) y
+`src/data/genres.ts` (re-export de `genreStore` para mantener compatibilidad de imports).
+
+Los géneros y familias se cargan al arrancar la app con `loadGenres()`
+(`GET /genres` + `GET /families`), invocado en `src/main.tsx` **antes** de montar React.
+`GENRES` y `FAMILIES` se exponen como live bindings; hay helpers `getGenreById()`,
+`getFamilyColor()`, etc. Los colores de familia siguen siendo del frontend (CSS vars
+`hsl(var(--family-*))`); el backend solo aporta el `id` de familia.
 
 ### Tipos clave
 
@@ -54,18 +71,23 @@ interface Family {
 
 Hay ~340 géneros y 17 familias. El grafo se construye en `src/components/GenreGraph.tsx` a partir de este array estático con `buildGraph()`.
 
-### Por qué migrar géneros a BD
+### Por qué se migraron los géneros a BD (histórico)
 
-- Hoy añadir o editar un género requiere un deploy.
-- No hay forma de persistir géneros creados por usuarios ni correcciones editoriales.
-- La búsqueda de géneros en el grafo es `Array.filter` en memoria; con una BD se puede texto completo, fuzzy search, etc.
-- Los colores de familia están en CSS variables (Tailwind); la BD solo necesita el `id` de familia — el color sigue siendo responsabilidad del frontend.
+- Antes, añadir o editar un género requería un deploy (array hardcodeado).
+- No había forma de persistir géneros creados por usuarios ni correcciones editoriales.
+- La búsqueda en memoria (`Array.filter`) se puede sustituir por búsqueda server-side.
+- Los colores de familia siguen en CSS variables; la BD solo guarda el `id` de familia.
 
 ---
 
-## APIs externas — estado actual
+## APIs externas — vía backend
 
-Todas las llamadas se hacen **directamente desde el browser**. Cada lib tiene caches en `Map` en memoria (se pierden al recargar).
+El frontend ya **no** llama a MusicBrainz / Spotify / Last.fm / TheAudioDB directamente.
+Los libs de `src/lib/` (`musicbrainz.ts`, `spotify.ts`, `lastfm.ts`) son ahora wrappers
+finos que llaman al backend mediante `apiFetch`, pasando la fuente activa como parámetro
+`source`. El backend oculta las API keys, cachea server-side y normaliza al formato
+`Unified*`. La descripción de abajo documenta las **fuentes originales** que el backend
+consume internamente (referencia para mantener el backend), no llamadas del browser.
 
 ### 1. MusicBrainz (`src/lib/musicbrainz.ts`)
 
@@ -252,17 +274,26 @@ El cliente dejaría de importar los libs de `src/lib/` y solo haría `fetch` al 
 
 ---
 
-## Puntos de integración en el frontend para la migración
+## Integración frontend ↔ backend (estado actual)
 
-Los cambios en el cliente serían quirúrgicos — los componentes y tipos no cambian:
+La migración ya se aplicó. Resumen de cómo quedó cada pieza:
 
-| Archivo | Qué cambia |
+| Archivo | Estado |
 |---|---|
-| `src/data/genres.ts` | Reemplazar el array estático por un `GET /genres` al iniciar la app |
-| `src/lib/musicbrainz.ts` | Reemplazar calls directas a MB con calls al backend proxy |
-| `src/lib/spotify.ts` | Idem Spotify |
-| `src/lib/lastfm.ts` | Idem Last.fm |
-| `src/lib/audiodb.ts` | Absorber en el endpoint `/api/artists/:id/image` del backend |
-| `src/context/DataSourceContext.tsx` | No cambia — `source` sigue siendo parámetro del request |
+| `src/data/genreStore.ts` + `genres.ts` | Géneros y familias se cargan con `loadGenres()` (`GET /genres`, `GET /families`) en `main.tsx` |
+| `src/lib/api.ts` | Cliente HTTP central (`apiFetch`): base `VITE_API_URL`, `Bearer` token y auto-refresh en 401 |
+| `src/lib/musicbrainz.ts` / `spotify.ts` / `lastfm.ts` | Wrappers que llaman al backend vía `apiFetch`, pasando `source` |
+| `src/lib/audiodb.ts` | Eliminado — la imagen la resuelve el backend |
+| `src/context/DataSourceContext.tsx` | Sin cambios — `source` sigue siendo parámetro del request |
+| `src/context/AuthContext.tsx` | **Nuevo** — login/registro/logout, tokens en `localStorage`, refresh |
+| `src/lib/favorites.ts` | **Nuevo** — CRUD de favoritos de usuario (géneros/artistas/tracks/álbumes) |
 
-Los tipos `Unified*`, `SearchArtist`, y todos los componentes de UI no necesitan cambios.
+Los tipos `Unified*`, `SearchArtist` (en `src/lib/spotify.ts`) y los componentes de UI no
+cambiaron con la migración.
+
+## Autenticación y favoritos
+
+- **Auth** (`AuthContext` + endpoints `/auth/*`): JWT con `accessToken` + `refreshToken`
+  persistidos en `localStorage`. `apiFetch` reintenta una vez tras refrescar ante un 401.
+- **Favoritos** (`/users/me/favorites/{genres|artists|tracks|albums}`): GET/POST/DELETE,
+  requieren sesión.
