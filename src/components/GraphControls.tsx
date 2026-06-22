@@ -57,6 +57,7 @@ export function GraphControls({
   const [artistError, setArtistError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
   const familyItemRefs = useRef<Partial<Record<FamilyId, HTMLLIElement | null>>>({});
+  const searchResultsId = "search-results";
 
   const subgenresByFamily = useMemo(() => {
     const map = new Map<FamilyId, Genre[]>();
@@ -183,6 +184,8 @@ export function GraphControls({
                 onClick={logout}
                 className="text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
                 title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+                data-testid="logout-button"
               >
                 {user?.email ?? "Sesión"}
               </button>
@@ -190,6 +193,8 @@ export function GraphControls({
               <button
                 onClick={() => setAuthOpen(true)}
                 className="text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Iniciar sesión"
+                data-testid="login-button"
               >
                 Iniciar sesión
               </button>
@@ -200,7 +205,7 @@ export function GraphControls({
         <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
 
         {/* Modo búsqueda toggle */}
-        <div className="mb-2 flex rounded-md border border-border bg-background/40 p-0.5 text-[11px] font-mono">
+        <div className="mb-2 flex rounded-md border border-border bg-background/40 p-0.5 text-[11px] font-mono" role="radiogroup" aria-label="Modo de búsqueda">
           {(
             [
               { id: "genre", label: "Género", Icon: Disc3 },
@@ -210,8 +215,12 @@ export function GraphControls({
             <button
               key={id}
               onClick={() => setSearchMode(id)}
+              data-testid={`mode-${id}`}
+              role="radio"
+              aria-checked={searchMode === id}
+              aria-label={`Buscar por ${label.toLowerCase()}`}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1.5 rounded-[5px] py-1 transition-colors",
+                "flex flex-1 items-center justify-center gap-1.5 rounded-[5px] py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 searchMode === id
                   ? "bg-secondary text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -233,15 +242,17 @@ export function GraphControls({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={searchMode === "genre" ? "Buscar género…" : "Buscar artista…"}
+            aria-label={searchMode === "genre" ? "Buscar género" : "Buscar artista"}
             className="h-8 pl-8 bg-background/60 text-sm"
+            data-testid="search-input"
           />
         </div>
 
         {/* Resultados de búsqueda de artista */}
         {searchMode === "artist" && search.trim().length >= 2 && (
-          <div className="mt-2 max-h-[260px] overflow-y-auto rounded-md border border-border bg-background/60">
+          <div id={searchResultsId} className="mt-2 max-h-[260px] overflow-y-auto rounded-md border border-border bg-background/60" role="region" aria-live="polite" aria-label="Resultados de búsqueda">
             {artistError && (
-              <p className="px-2 py-2 text-[11px] text-destructive/90 leading-snug">{artistError}</p>
+              <p className="px-2 py-2 text-[11px] text-destructive/90 leading-snug" role="alert">{artistError}</p>
             )}
             {!loadingArtists && !artistError && artistResults.length === 0 && (
               <p className="px-2 py-2 text-[11px] text-muted-foreground">Sin resultados.</p>
@@ -251,7 +262,9 @@ export function GraphControls({
                 <li key={a.id}>
                   <button
                     onClick={() => onSelectArtist(a)}
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-secondary/60 transition-colors"
+                    data-testid="artist-result"
+                    aria-label={`Seleccionar artista ${a.name}`}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-secondary/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   >
                     <User className="h-3 w-3 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
@@ -287,12 +300,15 @@ export function GraphControls({
           <p className="mb-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             Fuente
           </p>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Fuente de datos">
             {/* MusicBrainz */}
             <button
               onClick={() => setDataSource("musicbrainz")}
+              role="radio"
+              aria-checked={dataSource === "musicbrainz"}
+              aria-label="Fuente MusicBrainz"
               className={cn(
-                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 dataSource === "musicbrainz"
                   ? "border-transparent text-foreground"
                   : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
@@ -321,8 +337,11 @@ export function GraphControls({
             {/* Spotify */}
             <button
               onClick={() => setDataSource("spotify")}
+              role="radio"
+              aria-checked={dataSource === "spotify"}
+              aria-label="Fuente Spotify"
               className={cn(
-                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 dataSource === "spotify"
                   ? "border-transparent text-foreground"
                   : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
@@ -351,8 +370,11 @@ export function GraphControls({
             {/* Last.fm */}
             <button
               onClick={() => setDataSource("lastfm")}
+              role="radio"
+              aria-checked={dataSource === "lastfm"}
+              aria-label="Fuente Last.fm"
               className={cn(
-                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200",
+                "group flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                 dataSource === "lastfm"
                   ? "border-transparent text-foreground"
                   : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-background/20",
@@ -389,7 +411,8 @@ export function GraphControls({
           {activeFamilies.size > 0 && (
             <button
               onClick={clearFamilies}
-              className="text-[10px] font-mono text-muted-foreground hover:text-foreground"
+              aria-label={`Limpiar filtros (${activeFamilies.size} activos)`}
+              className="text-[10px] font-mono text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             >
               limpiar ({activeFamilies.size})
             </button>
@@ -411,8 +434,8 @@ export function GraphControls({
                 >
                   <button
                     onClick={() => toggleExpand(f.id)}
-                    aria-label={isOpen ? "Colapsar" : "Expandir"}
-                    className="flex h-7 w-6 shrink-0 items-center justify-center rounded hover:bg-secondary"
+                    aria-label={isOpen ? `Colapsar familia ${f.name}` : `Expandir familia ${f.name}`}
+                    className="flex h-7 w-6 shrink-0 items-center justify-center rounded hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   >
                     <ChevronRight
                       className={cn(
@@ -423,8 +446,9 @@ export function GraphControls({
                   </button>
                   <button
                     onClick={() => toggleFamily(f.id)}
+                    aria-label={`${isActive ? "Desactivar" : "Activar"} filtro de familia ${f.name}`}
                     className={cn(
-                      "flex flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-secondary",
+                      "flex flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                       isActive && "bg-secondary",
                     )}
                   >
@@ -448,7 +472,8 @@ export function GraphControls({
                       <li key={g.id}>
                         <button
                           onClick={() => onSelectGenre(g.id)}
-                          className="rounded-full border border-border/60 bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-secondary transition-colors"
+                          aria-label={`Seleccionar género ${g.name}`}
+                          className="rounded-full border border-border/60 bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                         >
                           {g.name}
                         </button>
@@ -464,4 +489,3 @@ export function GraphControls({
     </div>
   );
 }
-

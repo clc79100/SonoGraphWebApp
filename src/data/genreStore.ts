@@ -48,10 +48,21 @@ const FAMILY_COLORS: Record<string, string> = {
   reggae: "hsl(var(--family-reggae))",
 };
 
+interface RawGenre {
+  id: string;
+  name: string;
+  family: string;
+  parents?: string[];
+  related?: string[];
+  era?: string;
+  region?: string;
+  description?: string;
+}
+
 export async function loadGenres(): Promise<void> {
   try {
     const [genreData, familyData] = await Promise.all([
-      apiFetch<any[]>("/genres"),
+      apiFetch<RawGenre[]>("/genres"),
       apiFetch<{ id: string; name: string }[]>("/families"),
     ]);
 

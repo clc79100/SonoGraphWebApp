@@ -153,6 +153,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
       })
       .finally(() => setLoadingTracks(false));
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genre?.id, dataSource]);
 
   if (!genre) return null;
@@ -168,7 +169,7 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
   const color = getFamilyColor(genre.family);
 
   return (
-    <aside className="fixed right-0 top-0 z-30 h-screen w-[360px] max-w-[88vw] border-l border-border bg-card/95 backdrop-blur-xl shadow-[-12px_0_40px_-20px_hsl(0_0%_0%/0.7)] animate-fade-in">
+    <aside className="fixed right-0 top-0 z-30 h-screen w-[360px] max-w-[88vw] border-l border-border bg-card/95 backdrop-blur-xl shadow-[-12px_0_40px_-20px_hsl(0_0%_0%/0.7)] animate-fade-in" aria-label={`Detalle de género: ${genre.name}`}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <span
@@ -227,9 +228,9 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
           )}
 
           <Section title={`Artistas · ${SOURCE_LABEL[dataSource]}`}>
-            {loading && <p className="text-xs text-muted-foreground">Cargando…</p>}
+            {loading && <p className="text-xs text-muted-foreground" aria-live="polite">Cargando…</p>}
             {!loading && artists.length === 0 && (
-              <p className="text-xs text-muted-foreground">Sin resultados.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Sin resultados.</p>
             )}
             <ul className="space-y-2">
                   {artists.map((a) => {
@@ -240,7 +241,8 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
                       href={a.externalUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="group flex items-center gap-2.5 rounded-md p-1.5 -mx-1.5 hover:bg-secondary/60 transition-colors"
+                      className="group flex items-center gap-2.5 rounded-md p-1.5 -mx-1.5 hover:bg-secondary/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      aria-label={`Ver ${a.name} en la fuente externa`}
                     >
                       <Avatar className="h-9 w-9 border border-border shrink-0">
                         {img && <AvatarImage src={img} alt={a.name} />}
@@ -274,9 +276,9 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
           </Section>
 
           <Section title={`Top canciones · ${SOURCE_LABEL[dataSource]}`}>
-            {loadingTracks && <p className="text-xs text-muted-foreground">Cargando…</p>}
+            {loadingTracks && <p className="text-xs text-muted-foreground" aria-live="polite">Cargando…</p>}
             {!loadingTracks && tracks.length === 0 && (
-              <p className="text-xs text-muted-foreground">Sin resultados.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Sin resultados.</p>
             )}
             <ol className="space-y-1">
               {tracks.map((t, i) => (
@@ -285,7 +287,8 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
                     href={t.externalUrl ?? "#"}
                     target="_blank"
                     rel="noreferrer"
-                    className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors"
+                    className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-secondary/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                    aria-label={`Escuchar ${t.title}${t.artist ? ` de ${t.artist}` : ""}`}
                   >
                     <span className="w-5 text-right font-mono text-[10px] text-muted-foreground shrink-0">
                       {i + 1}
@@ -312,18 +315,20 @@ export function GenreDetail({ genreId, onClose, onSelect }: Props) {
 
           <div className="pt-2 border-t border-border space-y-1.5">
             <a
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
               href={`https://rateyourmusic.com/genre/${encodeURIComponent(genre.name)}/`}
               target="_blank"
               rel="noreferrer"
+              aria-label={`Ver ${genre.name} en RateYourMusic`}
             >
               Ver en RateYourMusic <ExternalLink className="h-3 w-3" />
             </a>
             <a
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
               href={`https://everynoise.com/engenremap-${genre.id.replace(/-/g, "")}.html`}
               target="_blank"
               rel="noreferrer"
+              aria-label={`Ver ${genre.name} en Every Noise at Once`}
             >
               Ver en Every Noise at Once <ExternalLink className="h-3 w-3" />
             </a>
@@ -359,7 +364,8 @@ function Chips({ items, onSelect }: { items: Genre[]; onSelect: (id: string) => 
         <button
           key={g.id}
           onClick={() => onSelect(g.id)}
-          className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-xs hover:bg-secondary hover:border-primary/50 transition-colors"
+          aria-label={`Seleccionar género ${g.name}`}
+          className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-xs hover:bg-secondary hover:border-primary/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
           <span
             aria-hidden

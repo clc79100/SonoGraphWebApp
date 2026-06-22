@@ -8,6 +8,9 @@ export interface SearchArtist {
   image?: string | null;
   country?: string;
   disambiguation?: string;
+  popularity?: number;
+  mbid?: string;
+  listeners?: string;
   source: "musicbrainz" | "spotify" | "lastfm";
 }
 
@@ -68,9 +71,10 @@ export async function searchArtistByName(name: string, limit = 10): Promise<Sear
       q: trimmed,
       limit,
     });
-  } catch (err: any) {
-    if (err?.code === "premium_required") {
-      throw new SpotifyAPIError("premium_required", err.message);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "premium_required") {
+      throw new SpotifyAPIError("premium_required", e.message ?? "");
     }
     console.error("Spotify searchArtistByName error", err);
     return [];
@@ -82,9 +86,10 @@ export async function getArtistById(id: string): Promise<UnifiedArtist | null> {
     return await apiFetch<UnifiedArtist>(`/api/artists/${encodeURIComponent(id)}`, {
       source: "spotify",
     });
-  } catch (err: any) {
-    if (err?.code === "premium_required") {
-      throw new SpotifyAPIError("premium_required", err.message);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "premium_required") {
+      throw new SpotifyAPIError("premium_required", e.message ?? "");
     }
     console.error("Spotify getArtistById error", err);
     return null;
@@ -97,7 +102,7 @@ export async function getArtistAlbums(id: string, limit = 18): Promise<UnifiedAl
       source: "spotify",
       limit,
     });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("Spotify getArtistAlbums error", err);
     return [];
   }
@@ -108,7 +113,7 @@ export async function getArtistTopTracks(id: string): Promise<UnifiedTrack[]> {
     return await apiFetch<UnifiedTrack[]>(`/api/artists/${encodeURIComponent(id)}/tracks`, {
       source: "spotify",
     });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("Spotify getArtistTopTracks error", err);
     return [];
   }
@@ -120,9 +125,10 @@ export async function searchArtistsByGenre(genreId: string, limit = 10): Promise
       source: "spotify",
       limit,
     });
-  } catch (err: any) {
-    if (err?.code === "premium_required") {
-      throw new SpotifyAPIError("premium_required", err.message);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "premium_required") {
+      throw new SpotifyAPIError("premium_required", e.message ?? "");
     }
     console.error("Spotify searchArtistsByGenre error", err);
     return [];

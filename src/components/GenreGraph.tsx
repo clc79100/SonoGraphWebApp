@@ -1,20 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useRef, useCallback } from "react";
 import ForceGraph2D, { ForceGraphMethods } from "react-force-graph-2d";
-import { GENRES, getFamilyColor, type Genre, type FamilyId } from "@/data/genres";
+import { GENRES, type FamilyId } from "@/data/genres";
+import { buildGraph, type GraphNode, type GraphLink } from "@/data/graph";
 
-export interface GraphNode {
-  id: string;
-  name: string;
-  family: FamilyId;
-  val: number; // size
-  color: string;
-  genre: Genre;
-}
-export interface GraphLink {
-  source: string;
-  target: string;
-  kind: "parent" | "related";
-}
+export type { GraphNode, GraphLink };
 
 interface Props {
   width: number;
@@ -27,34 +17,10 @@ interface Props {
   highlightedIds?: Set<string>;
 }
 
-function buildGraph() {
-  const nodes: GraphNode[] = GENRES.map((g) => {
-    const childCount = GENRES.filter((x) => x.parents?.includes(g.id)).length;
-    return {
-      id: g.id,
-      name: g.name,
-      family: g.family,
-      val: 2 + Math.sqrt(childCount + 1) * 2,
-      color: getFamilyColor(g.family),
-      genre: g,
-    };
-  });
-  const links: GraphLink[] = [];
-  for (const g of GENRES) {
-    for (const p of g.parents || []) {
-      if (GENRES.some((x) => x.id === p)) links.push({ source: p, target: g.id, kind: "parent" });
-    }
-    for (const r of g.related || []) {
-      if (GENRES.some((x) => x.id === r)) links.push({ source: g.id, target: r, kind: "related" });
-    }
-  }
-  return { nodes, links };
-}
-
 export function GenreGraph({ width, height, selectedId, onSelect, onDeselectAll, search, activeFamilies, highlightedIds }: Props) {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const data = useMemo(buildGraph, []);
+  const data = useMemo(() => buildGraph(GENRES), []);
 
   // Grab canvas reference after first render for cursor control
   useEffect(() => {

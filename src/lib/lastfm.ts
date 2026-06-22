@@ -46,8 +46,9 @@ export async function getArtistById(id: string): Promise<UnifiedArtist | null> {
     return await apiFetch<UnifiedArtist>(`/api/artists/${encodeURIComponent(id)}`, {
       source: "lastfm",
     });
-  } catch (err: any) {
-    if (err?.status === 404) return null;
+  } catch (err: unknown) {
+    const e = err as { status?: number };
+    if (e?.status === 404) return null;
     console.error("Last.fm getArtistById error", err);
     return null;
   }

@@ -189,7 +189,7 @@ export function ArtistDetail({
         const updated = await getFavoriteArtists();
         setFavArtists(new Map(updated.map((f) => [f.externalId, f])));
       }
-    } catch {}
+    } catch { /* silent — revert on error */ }
     setFavArtistLoading(false);
   };
 
@@ -210,7 +210,7 @@ export function ArtistDetail({
         const updated = await getFavoriteTracks();
         setFavTracks(new Map(updated.map((f) => [f.externalId, f])));
       }
-    } catch {}
+    } catch { /* silent — revert on error */ }
     setFavTrackLoading((prev) => { const s = new Set(prev); s.delete(track.id); return s; });
   };
 
@@ -232,7 +232,7 @@ export function ArtistDetail({
         const updated = await getFavoriteAlbums();
         setFavAlbums(new Map(updated.map((f) => [f.externalId, f])));
       }
-    } catch {}
+    } catch { /* silent — revert on error */ }
     setFavAlbumLoading((prev) => { const s = new Set(prev); s.delete(album.id); return s; });
   };
 
@@ -262,7 +262,7 @@ export function ArtistDetail({
       : "Ver en MusicBrainz";
 
   return (
-    <aside className="fixed right-0 top-0 z-30 h-screen w-[380px] max-w-[92vw] border-l border-border bg-card/95 backdrop-blur-xl shadow-[-12px_0_40px_-20px_hsl(0_0%_0%/0.7)] animate-fade-in">
+    <aside className="fixed right-0 top-0 z-30 h-screen w-[380px] max-w-[92vw] border-l border-border bg-card/95 backdrop-blur-xl shadow-[-12px_0_40px_-20px_hsl(0_0%_0%/0.7)] animate-fade-in" aria-label={`Detalle de artista: ${name}`}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <Disc3 className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -288,6 +288,7 @@ export function ArtistDetail({
               onClick={toggleArtistFav}
               disabled={favArtistLoading}
               aria-label={favArtists.has(artistId ?? "") ? "Quitar de favoritos" : "Añadir a favoritos"}
+              data-testid="artist-fav-button"
             >
               <Heart
                 className={`h-4 w-4 transition-colors ${
@@ -351,16 +352,17 @@ export function ArtistDetail({
           </div>
 
           <Section title={`Géneros${matchedGenres.length ? ` (${matchedGenres.length})` : ""}`}>
-            {loading && !details && <p className="text-xs text-muted-foreground">Cargando…</p>}
+            {loading && !details && <p className="text-xs text-muted-foreground" aria-live="polite">Cargando…</p>}
             {details && details.genres.length === 0 && (
-              <p className="text-xs text-muted-foreground">Sin géneros etiquetados.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Sin géneros etiquetados.</p>
             )}
             <div className="flex flex-wrap gap-1.5">
               {matchedGenres.map((g) => (
                 <button
                   key={g.id}
                   onClick={() => onSelectGenre(g.id)}
-                  className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-xs hover:bg-secondary hover:border-primary/50 transition-colors"
+                  aria-label={`Seleccionar género ${g.name}`}
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-2.5 py-1 text-xs hover:bg-secondary hover:border-primary/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 >
                   <span
                     aria-hidden
@@ -386,10 +388,10 @@ export function ArtistDetail({
 
           <Section title="Top canciones">
             {loading && tracks.length === 0 && (
-              <p className="text-xs text-muted-foreground">Cargando…</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Cargando…</p>
             )}
             {!loading && tracks.length === 0 && (
-              <p className="text-xs text-muted-foreground">Sin resultados.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Sin resultados.</p>
             )}
             <ol className="space-y-1">
               {tracks.map((t, i) => (
@@ -398,8 +400,8 @@ export function ArtistDetail({
                     <button
                       onClick={(e) => { e.preventDefault(); toggleTrackFav(t); }}
                       disabled={favTrackLoading.has(t.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      aria-label={favTracks.has(t.id) ? "Quitar" : "Añadir"}
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0 focus-visible:opacity-100"
+                      aria-label={`${favTracks.has(t.id) ? "Quitar" : "Añadir"} ${t.title} de favoritos`}
                     >
                       <Heart
                         className={`h-3 w-3 ${
@@ -414,7 +416,7 @@ export function ArtistDetail({
                     href={t.externalUrl ?? "#"}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex flex-1 items-center gap-2 min-w-0"
+                    className="flex flex-1 items-center gap-2 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
                   >
                     <span className="w-5 text-right font-mono text-[10px] text-muted-foreground shrink-0">
                       {i + 1}
@@ -441,10 +443,10 @@ export function ArtistDetail({
 
           <Section title={`Álbumes${albums.length ? ` (${albums.length})` : ""}`}>
             {loading && albums.length === 0 && (
-              <p className="text-xs text-muted-foreground">Cargando…</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Cargando…</p>
             )}
             {!loading && albums.length === 0 && (
-              <p className="text-xs text-muted-foreground">Sin álbumes.</p>
+              <p className="text-xs text-muted-foreground" aria-live="polite">Sin álbumes.</p>
             )}
             <div className="grid grid-cols-2 gap-2">
               {albums.map((alb) => (
@@ -453,7 +455,7 @@ export function ArtistDetail({
                     href={alb.externalUrl ?? "#"}
                     target="_blank"
                     rel="noreferrer"
-                    className="block w-full min-w-0"
+                    className="block w-full min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-md"
                     title={alb.title}
                   >
                     <div className="relative aspect-square w-full min-w-0 overflow-hidden rounded-md border border-border bg-secondary/40">
@@ -493,8 +495,8 @@ export function ArtistDetail({
                     <button
                       onClick={() => toggleAlbumFav(alb)}
                       disabled={favAlbumLoading.has(alb.id)}
-                      className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      aria-label={favAlbums.has(alb.id) ? "Quitar" : "Añadir"}
+                      className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity focus-visible:opacity-100"
+                      aria-label={`${favAlbums.has(alb.id) ? "Quitar" : "Añadir"} ${alb.title} de favoritos`}
                     >
                       <Heart
                         className={`h-4 w-4 drop-shadow-md ${
@@ -512,10 +514,11 @@ export function ArtistDetail({
 
           <div className="pt-2 border-t border-border">
             <a
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
               href={externalUrl}
               target="_blank"
               rel="noreferrer"
+              aria-label={`${externalLabel}: ${name}`}
             >
               {externalLabel} <ExternalLink className="h-3 w-3" />
             </a>

@@ -18,7 +18,6 @@ export function AuthModal({ open, onOpenChange }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const errorId = "auth-error-message";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,11 +63,10 @@ export function AuthModal({ open, onOpenChange }: Props) {
           </TabsList>
 
           <TabsContent value="login">
-            <form onSubmit={handleSubmit} className="mt-3 space-y-3" aria-describedby={error ? errorId : undefined}>
+            <form onSubmit={handleSubmit} className="mt-3 space-y-3">
               <Input
                 type="email"
                 placeholder="Email"
-                aria-label="Email para iniciar sesión"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoFocus
@@ -78,13 +76,12 @@ export function AuthModal({ open, onOpenChange }: Props) {
               <Input
                 type="password"
                 placeholder="Contraseña"
-                aria-label="Contraseña para iniciar sesión"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-background/60"
                 data-testid="login-password"
               />
-              {error && <p id={errorId} role="alert" className="text-xs text-destructive" data-testid="auth-error">{error}</p>}
+              {error && <p className="text-xs text-destructive" data-testid="auth-error">{error}</p>}
               <Button type="submit" className="w-full font-mono text-xs" disabled={loading} data-testid="login-submit">
                 {loading ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : null}
                 Entrar
@@ -93,11 +90,10 @@ export function AuthModal({ open, onOpenChange }: Props) {
           </TabsContent>
 
           <TabsContent value="register">
-            <form onSubmit={handleSubmit} className="mt-3 space-y-3" aria-describedby={error ? errorId : undefined}>
+            <form onSubmit={handleSubmit} className="mt-3 space-y-3">
               <Input
                 type="email"
                 placeholder="Email"
-                aria-label="Email para registrarse"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoFocus
@@ -107,13 +103,12 @@ export function AuthModal({ open, onOpenChange }: Props) {
               <Input
                 type="password"
                 placeholder="Contraseña (mín. 6 caracteres)"
-                aria-label="Contraseña para registrarse"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-background/60"
                 data-testid="register-password"
               />
-              {error && <p id={errorId} role="alert" className="text-xs text-destructive" data-testid="auth-error">{error}</p>}
+              {error && <p className="text-xs text-destructive" data-testid="auth-error">{error}</p>}
               <Button type="submit" className="w-full font-mono text-xs" disabled={loading} data-testid="register-submit">
                 {loading ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : null}
                 Crear cuenta
